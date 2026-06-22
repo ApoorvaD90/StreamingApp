@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: admin-service
+  namespace: streamingapp
+  labels:
+    app: admin-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: admin-service
+  template:
+    metadata:
+      labels:
+        app: admin-service
+    spec:
+      containers:
+        - name: admin-service
+          image: <AWS_ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/streamingapp/admin-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3003
+          envFrom:
+            - secretRef:
+                name: streamingapp-secrets
+          env:
+            - name: PORT
+              value: "3003"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 300m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3003
+            initialDelaySeconds: 20
+            periodSeconds: 15--
+apiVersion: v1
+kind: Service
+metadata:
+  name: admin-service
+  namespace: streamingapp
+spec:
+  selector:
+   app: admin-service
+  ports:
+    - port: 3003
+      targetPort: 3003
+  type: ClusterIP

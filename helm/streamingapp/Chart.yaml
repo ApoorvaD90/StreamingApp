@@ -1,0 +1,12 @@
+apiVersion: v2
+name: streamingapp
+description: StreamingApp microservices chart - React SPA + 4 Node.js services
+type: application
+version: 1.0.0
+appVersion: "1.0"
+keywords:
+  - streaming
+  - nodejs
+  - react
+maintainers:
+  - name: Apoorva Deshpande

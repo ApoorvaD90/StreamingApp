@@ -1,0 +1,71 @@
+global:
+  imageRegistry: <AWS_ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com
+  imageTag: latest
+  namespace: streamingapp
+  secretName: streamingapp-secrets
+frontend:
+  enabled: true
+  replicaCount: 2
+  image:
+    name: streamingapp/frontend
+  service:
+    port: 80
+  resources:
+    requests:  { cpu: 50m,  memory: 64Mi  }
+    limits:    { cpu: 200m, memory: 128Mi }
+authService:
+  enabled: true
+  replicaCount: 2
+  image:
+    name: streamingapp/auth-service
+  service:
+    port: 3001
+  hpa:
+    minReplicas: 2
+    maxReplicas: 6
+    cpuUtilization: 70
+   resources:
+    requests:  { cpu: 100m, memory: 128Mi }
+    limits:    { cpu: 300m, memory: 256Mi }
+streamingService:
+  enabled: true
+  replicaCount: 2
+  image:
+    name: streamingapp/streaming-service
+  service:
+    port: 3002
+  hpa:
+    minReplicas: 2
+    maxReplicas: 8
+    cpuUtilization: 60
+  resources:
+    requests:  { cpu: 200m, memory: 256Mi }
+    limits:    { cpu: 500m, memory: 512Mi }
+adminService:
+  enabled: true
+  replicaCount: 1
+  image:
+    name: streamingapp/admin-service
+  service:
+    port: 3003
+  resources:
+    requests:  { cpu: 100m, memory: 128Mi }
+    limits:    { cpu: 300m, memory: 256Mi }
+chatService:
+  enabled: true
+  replicaCount: 2
+  image:
+    name: streamingapp/chat-service
+  service:
+    port: 3004
+  hpa:
+    minReplicas: 2
+    maxReplicas: 6
+    cpuUtilization: 70
+mongodb:
+  enabled: true
+  storageSize: 20Gi
+ingress:
+  enabled: true
+  host: streamingapp.example.com
+  certArn: arn:aws:acm:us-east-1:ACCOUNT:certificate/CERT-ID  

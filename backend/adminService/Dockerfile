@@ -1,12 +1,15 @@
-FROM node:18-alpine AS base
+FROM node:18-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
 
-WORKDIR /app/adminService
+COPY . .
 
-COPY adminService/package*.json ./
-RUN npm install --production
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+USER appuser
 
-COPY adminService/. ./
-ENV NODE_ENV=production
 EXPOSE 3003
-
-CMD ["npm", "run", "start"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s \
+  CMD wget -qO- http://localhost:3003/api/health || exit 1
+  
+CMD ["node", "index.js"]

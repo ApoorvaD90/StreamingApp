@@ -1,0 +1,10 @@
+global:
+  imageTag: "REPLACED_BY_JENKINS_AT_BUILD_TIME"
+authService:
+  replicaCount: 3
+streamingService:
+  replicaCount: 4
+  hpa:
+    maxReplicas: 12
+chatService:
+  replicaCount: 3

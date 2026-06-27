@@ -1,0 +1,50 @@
+{{- range $svcName, $svc := .Values.services }}
+{{- if $svc.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $svcName }}
+  namespace: {{ $.Values.global.namespace }}
+  labels:
+    app: {{ $svcName }}
+    chart: {{ $.Chart.Name }}-{{ $.Chart.Version }}
+spec:
+  replicas: {{ $svc.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ $svcName }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: {{ $svcName }}
+    spec:
+      containers:
+        - name: {{ $svcName }}
+          image: "{{ $.Values.global.imageRegistry }}/{{ $svc.image.name }}:{{ $.Values.global.imageTag }}"
+          imagePullPolicy: Always
+          ports:
+            - containerPort: {{ $svc.service.port }}
+          envFrom:
+            - secretRef:
+                name: {{ $.Values.global.secretName }}
+          resources: {{ toYaml $svc.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: {{ $svc.service.port }}
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: {{ $svc.service.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+{{- end }}
+{{- end }}

@@ -45,167 +45,246 @@ All backend services share common database models via `backend/common`. Each ser
 
 ## Architecture Diagrams
 
-### System Architecture
+### 1. System Architecture (AWS Production)
 
 ```mermaid
 graph TB
-    User(["👤 User / Browser"])
+    User([User / Browser])
 
-    subgraph AWS["☁️ AWS Cloud — us-east-1"]
-        subgraph VPC["VPC  10.0.0.0/16"]
-            subgraph PubSub["Public Subnets (AZ-a · AZ-b)"]
-                IGW["🌐 Internet Gateway"]
-                ALB["⚖️ Application Load Balancer\nHTTPS :443 · HTTP :80"]
-                NAT["🔁 NAT Gateway"]
-                JenkinsEC2["🖥️ Jenkins EC2\nt3.medium · Ubuntu 22.04"]
+    subgraph AWS[AWS Cloud  us-east-1]
+        subgraph VPC[VPC  10.0.0.0/16]
+
+            subgraph PUBLIC[Public Subnets  AZ-a and AZ-b]
+                ALB[Application Load Balancer\nHTTPS 443 / HTTP 80]
+                JENKINS[Jenkins EC2\nt3.medium  Ubuntu 22.04]
             end
 
-            subgraph PrivSub["Private Subnets (EKS Nodes)"]
-                subgraph EKS["☸️ AWS EKS Cluster  v1.29"]
-                    Ingress["📡 Nginx Ingress Controller"]
+            subgraph PRIVATE[Private Subnets  EKS Worker Nodes]
+                subgraph EKS[AWS EKS Cluster  v1.29]
+                    INGRESS[Nginx Ingress Controller]
 
-                    subgraph AppNS["namespace: streamingapp"]
-                        FE["🖼️ Frontend\nReact 18 + Nginx :80"]
-                        AUTH["🔐 Auth Service\nNode.js :3001"]
-                        STREAM["▶️ Streaming Service\nNode.js :3002"]
-                        ADMIN["🛠️ Admin Service\nNode.js :3003"]
-                        CHAT["💬 Chat Service\nSocket.IO :3004"]
-                        MONGO[("🍃 MongoDB 6\nStatefulSet :27017")]
+                    subgraph APP[namespace  streamingapp]
+                        FE[Frontend\nReact 18 + Nginx  :80]
+                        AUTH[Auth Service\nNode.js  :3001]
+                        STREAM[Streaming Service\nNode.js  :3002]
+                        ADMIN[Admin Service\nNode.js  :3003]
+                        CHAT[Chat Service\nSocket.IO  :3004]
+                        MONGO[(MongoDB 6\nStatefulSet  :27017\n20Gi PVC)]
                     end
 
-                    subgraph MonNS["namespace: monitoring"]
-                        PROM["📊 Prometheus"]
-                        GRAF["📈 Grafana"]
-                        ALERT["🔔 Alertmanager"]
+                    subgraph MON[namespace  monitoring]
+                        PROM[Prometheus\n15d retention]
+                        GRAF[Grafana\nDashboards]
+                        ALERTMGR[Alertmanager]
                     end
                 end
             end
         end
 
-        ECR["📦 AWS ECR\nDocker Registry\n5 repositories"]
-        S3["🪣 AWS S3\nVideo Storage\nstreamingapp-videos"]
-        SM["🔑 AWS Secrets Manager\nJWT · DB creds · AWS keys"]
-        TFState["🗄️ S3 + DynamoDB\nTerraform Remote State"]
+        ECR[AWS ECR\n5 Docker Repositories]
+        S3[AWS S3\nstreamingapp-videos]
+        SECRETS[AWS Secrets Manager\nJWT  DB creds  AWS keys]
+        TFSTATE[S3 + DynamoDB\nTerraform Remote State]
     end
 
-    Slack(["💬 Slack\n#devops-alerts"])
+    SLACK([Slack\n#devops-alerts])
 
-    User -- "HTTPS" --> ALB
-    User -- "WSS /socket.io" --> ALB
-    ALB --> Ingress
+    User -->|HTTPS| ALB
+    User -->|WebSocket WSS| ALB
+    ALB --> INGRESS
+    INGRESS -->|/| FE
+    INGRESS -->|/api/auth| AUTH
+    INGRESS -->|/api/streaming| STREAM
+    INGRESS -->|/api/admin| ADMIN
+    INGRESS -->|/socket.io| CHAT
 
-    Ingress -- "/" --> FE
-    Ingress -- "/api/auth" --> AUTH
-    Ingress -- "/api/streaming" --> STREAM
-    Ingress -- "/api/admin" --> ADMIN
-    Ingress -- "/socket.io" --> CHAT
+    AUTH --> MONGO
+    STREAM --> MONGO
+    ADMIN --> MONGO
+    CHAT --> MONGO
 
-    AUTH & STREAM & ADMIN & CHAT --> MONGO
-    STREAM & ADMIN --> S3
-    AUTH & STREAM & ADMIN & CHAT --> SM
+    STREAM -->|presigned URL| S3
+    ADMIN -->|PutObject| S3
 
-    PROM -- "scrape /metrics" --> AUTH & STREAM & ADMIN & CHAT
-    PROM --> ALERT
-    ALERT -- "alert" --> Slack
-    GRAF -- "query" --> PROM
+    AUTH --> SECRETS
+    STREAM --> SECRETS
+    ADMIN --> SECRETS
+    CHAT --> SECRETS
 
-    JenkinsEC2 -- "docker push" --> ECR
-    JenkinsEC2 -- "helm upgrade" --> EKS
-    JenkinsEC2 -- "terraform apply" --> VPC
-    JenkinsEC2 -- "state" --> TFState
-    ECR -- "imagePull" --> AppNS
+    PROM -->|scrape /metrics| AUTH
+    PROM -->|scrape /metrics| STREAM
+    PROM -->|scrape /metrics| ADMIN
+    PROM -->|scrape /metrics| CHAT
+    PROM --> ALERTMGR
+    ALERTMGR -->|alert| SLACK
+    GRAF -->|query| PROM
+
+    JENKINS -->|docker push| ECR
+    JENKINS -->|helm upgrade| EKS
+    JENKINS -->|terraform apply| VPC
+    JENKINS --> TFSTATE
+    ECR -->|imagePull| APP
+
+    classDef aws fill:#FF9900,stroke:#FF6600,color:#000,font-weight:bold
+    classDef eks fill:#326CE5,stroke:#1a4fa0,color:#fff,font-weight:bold
+    classDef service fill:#2496ED,stroke:#0d6ebd,color:#fff
+    classDef db fill:#4DB33D,stroke:#2e7d1f,color:#fff,font-weight:bold
+    classDef mon fill:#E6522C,stroke:#b33d1e,color:#fff
+    classDef external fill:#6c757d,stroke:#495057,color:#fff
+    classDef user fill:#17a2b8,stroke:#117a8b,color:#fff,font-weight:bold
+
+    class ALB,ECR,S3,SECRETS,TFSTATE aws
+    class EKS,INGRESS eks
+    class FE,AUTH,STREAM,ADMIN,CHAT service
+    class MONGO db
+    class PROM,GRAF,ALERTMGR mon
+    class JENKINS,SLACK external
+    class User user
 ```
 
 ---
 
-### CI/CD Pipeline
+### 2. CI/CD Pipeline
 
 ```mermaid
-flowchart LR
-    GH(["📁 GitHub\npush to main"])
+flowchart TD
+    GH([GitHub Repository\npush to main branch])
 
-    subgraph Jenkins["🖥️ Jenkins Pipeline"]
-        S1["1️⃣ Checkout\ngit clone"]
-        S2["2️⃣ Unit Tests\nnpm test — parallel"]
-        S3["3️⃣ Docker Build & Push\n5 images → AWS ECR\ntag: git-sha"]
-        S4["4️⃣ Terraform Plan\npreview infra changes"]
-        S5["5️⃣ Terraform Apply\nEKS · VPC · SGs\n⏸ manual approval"]
-        S6["6️⃣ Ansible Configure\nEC2 nodes · Docker\nkubectl · Helm"]
-        S7["7️⃣ Deploy to EKS\nhelm upgrade --install\nvalues-prod.yaml"]
-        S8["8️⃣ Smoke Tests\ncurl /api/health"]
-        S9["9️⃣ Notify\nSlack ✅ / ❌"]
+    GH -->|webhook trigger| S1
+
+    subgraph PIPE[Jenkins Declarative Pipeline]
+        direction TB
+        S1[Stage 1\nCheckout\ngit clone from GitHub]
+        S2[Stage 2\nUnit Tests\nnpm test in parallel\nAuth  Streaming  Frontend]
+        S3[Stage 3\nDocker Build and Push\nBuild 5 images\nPush to AWS ECR with git-sha tag]
+        S4[Stage 4\nTerraform Plan\nPreview infra changes\nmain branch only]
+        S5[Stage 5\nTerraform Apply\nProvision EKS  VPC  SGs\nManual approval gate]
+        S6[Stage 6\nAnsible Configure\nConfigure EC2 nodes\nInstall Docker  kubectl  Helm]
+        S7[Stage 7\nDeploy to EKS\nhelm upgrade  install\nvalues-prod.yaml]
+        S8[Stage 8\nSmoke Tests\ncurl health checks\nAll service endpoints]
+        S9[Stage 9\nNotifications\nSlack on success or failure]
+
+        S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7 --> S8 --> S9
     end
 
-    GH -- "webhook" --> S1
-    S1 --> S2
-    S2 --> S3
-    S3 --> S4
-    S4 --> S5
-    S5 --> S6
-    S6 --> S7
-    S7 --> S8
-    S8 --> S9
+    S9 -->|success| SUCCESS([Slack - Build Passed\nDeploy complete])
+    S9 -->|failure| FAIL([Slack - Build Failed\nBuild URL attached])
+
+    classDef stage fill:#2496ED,stroke:#0d6ebd,color:#fff,font-weight:bold
+    classDef trigger fill:#FF9900,stroke:#cc7a00,color:#000,font-weight:bold
+    classDef result fill:#28a745,stroke:#1e7e34,color:#fff
+    classDef fail fill:#dc3545,stroke:#bd2130,color:#fff
+
+    class S1,S2,S3,S4,S5,S6,S7,S8,S9 stage
+    class GH trigger
+    class SUCCESS result
+    class FAIL fail
 ```
 
 ---
 
-### Microservices & Network Flow
-
-```mermaid
-graph TB
-    Browser(["👤 Browser"])
-
-    subgraph K8s["☸️ Kubernetes — namespace: streamingapp"]
-        Nginx["🖼️ Frontend\nNginx + React SPA :80"]
-
-        subgraph Backend["Backend Microservices"]
-            AUTH["🔐 Auth Service\n:3001\nJWT · Bcrypt · Mongoose"]
-            STREAM["▶️ Streaming Service\n:3002\nPresigned URLs · AWS S3 SDK"]
-            ADMIN["🛠️ Admin Service\n:3003\nMulter upload · S3 storage"]
-            CHAT["💬 Chat Service\n:3004\nSocket.IO · WebSocket"]
-        end
-
-        MONGO[("🍃 MongoDB 6\nStatefulSet\n:27017 · 20Gi PVC")]
-    end
-
-    S3(["🪣 AWS S3\nVideo Assets"])
-
-    Browser -- "HTTPS :443" --> Nginx
-    Browser -- "WSS" --> CHAT
-
-    Nginx -- "/api/auth/*" --> AUTH
-    Nginx -- "/api/streaming/*" --> STREAM
-    Nginx -- "/api/admin/*" --> ADMIN
-    Nginx -- "/socket.io/*" --> CHAT
-
-    AUTH & STREAM & ADMIN & CHAT -- "ClusterIP :27017" --> MONGO
-    STREAM & ADMIN -- "Presigned URL / PutObject" --> S3
-```
-
----
-
-### Infrastructure Overview
+### 3. Microservices Network Flow
 
 ```mermaid
 graph LR
-    subgraph IaC["Infrastructure as Code"]
-        TF["🏗️ Terraform\nVPC · EKS · ECR\nS3 · IAM · SGs\nstate → S3 + DynamoDB"]
-        ANS["⚙️ Ansible\nroles/common\nroles/docker\nroles/kubectl\nroles/jenkins"]
-        HELM["⛵ Helm Chart\nstreamingapp/\nvalues-dev.yaml\nvalues-prod.yaml"]
+    BROWSER([Browser / Client])
+
+    subgraph K8S[Kubernetes  namespace  streamingapp]
+        subgraph INGRESS_GRP[Ingress Layer]
+            ALB[AWS ALB]
+            NG[Nginx Ingress Controller]
+        end
+
+        subgraph FRONTEND[Frontend Pod]
+            FE[React 18 SPA\nNginx :80]
+        end
+
+        subgraph SERVICES[Backend Microservices]
+            AUTH[Auth Service\n:3001\nJWT  Bcrypt  Mongoose]
+            STREAM[Streaming Service\n:3002\nPresigned URLs  S3 SDK]
+            ADMIN[Admin Service\n:3003\nMulter  S3 Upload]
+            CHAT[Chat Service\n:3004\nSocket.IO  WebSocket]
+        end
+
+        MONGO[(MongoDB 6\nStatefulSet\n:27017\n20Gi PVC)]
     end
 
-    subgraph Monitoring["Observability Stack"]
-        PROM["📊 Prometheus\n15d retention · 20Gi storage"]
-        GRAF["📈 Grafana\nCluster + App dashboards"]
-        ALERT["🔔 Alertmanager\nServiceDown · HighCPU\nHighMemory · CrashLoop"]
+    S3_BUCKET([AWS S3\nVideo Storage])
+
+    BROWSER -->|HTTPS| ALB
+    BROWSER -->|WebSocket WSS| ALB
+    ALB --> NG
+    NG -->|path  /| FE
+    NG -->|path  /api/auth| AUTH
+    NG -->|path  /api/streaming| STREAM
+    NG -->|path  /api/admin| ADMIN
+    NG -->|path  /socket.io| CHAT
+
+    AUTH -->|ClusterIP :27017| MONGO
+    STREAM -->|ClusterIP :27017| MONGO
+    ADMIN -->|ClusterIP :27017| MONGO
+    CHAT -->|ClusterIP :27017| MONGO
+
+    STREAM -->|GetObject presigned| S3_BUCKET
+    ADMIN -->|PutObject| S3_BUCKET
+
+    classDef svc fill:#2496ED,stroke:#0d6ebd,color:#fff,font-weight:bold
+    classDef db fill:#4DB33D,stroke:#2e7d1f,color:#fff,font-weight:bold
+    classDef infra fill:#FF9900,stroke:#cc7a00,color:#000,font-weight:bold
+    classDef external fill:#6c757d,stroke:#343a40,color:#fff
+
+    class AUTH,STREAM,ADMIN,CHAT,FE svc
+    class MONGO db
+    class ALB,NG infra
+    class BROWSER,S3_BUCKET external
+```
+
+---
+
+### 4. Infrastructure & Observability Overview
+
+```mermaid
+graph TB
+    subgraph IaC[Infrastructure as Code]
+        direction LR
+        TF[Terraform\nVPC  EKS  ECR\nS3  IAM  Security Groups\nRemote state in S3 + DynamoDB]
+        ANS[Ansible\nroles  common\nroles  docker\nroles  kubectl\nroles  jenkins]
+        HELM[Helm Charts\nstreamingapp chart\nvalues-dev.yaml\nvalues-prod.yaml]
     end
 
-    TF -- "provisions" --> EKS(["☸️ EKS Cluster"])
-    ANS -- "configures" --> EC2(["🖥️ Jenkins EC2"])
-    HELM -- "deploys to" --> EKS
+    subgraph INFRA[AWS Infrastructure]
+        VPC[VPC\n2 Public  2 Private Subnets\nNAT Gateway  IGW]
+        EKS[EKS Cluster v1.29\nt3.medium  2-6 nodes]
+        ECR_I[ECR\n5 Repositories\n10-image lifecycle]
+        S3_I[S3 Bucket\nVideo storage\nIntelligent-Tiering]
+        JENKINS_I[Jenkins EC2\nt3.medium]
+    end
 
-    PROM --> GRAF
-    PROM --> ALERT
+    subgraph OBS[Observability Stack  namespace  monitoring]
+        direction LR
+        PROM_I[Prometheus\nScrapes all pods\n15d retention  20Gi]
+        GRAF_I[Grafana\nKubernetes dashboard\nApp dashboard]
+        ALERT_I[Alertmanager\nServiceDown\nHighCPU  HighMem\nCrashLoop]
+    end
+
+    TF -->|provisions| VPC
+    TF -->|provisions| EKS
+    TF -->|provisions| ECR_I
+    TF -->|provisions| S3_I
+    ANS -->|configures| JENKINS_I
+    HELM -->|deploys app to| EKS
+    HELM -->|deploys monitoring to| OBS
+
+    PROM_I --> GRAF_I
+    PROM_I --> ALERT_I
+
+    classDef iac fill:#6f42c1,stroke:#4e2d8c,color:#fff,font-weight:bold
+    classDef infra fill:#FF9900,stroke:#cc7a00,color:#000,font-weight:bold
+    classDef obs fill:#E6522C,stroke:#b33d1e,color:#fff,font-weight:bold
+
+    class TF,ANS,HELM iac
+    class VPC,EKS,ECR_I,S3_I,JENKINS_I infra
+    class PROM_I,GRAF_I,ALERT_I obs
 ```
 
 ---

@@ -1,0 +1,53 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+name: streamingapp-ingress
+namespace: streamingapp
+annotations:
+kubernetes.io/ingress.class: "alb"
+alb.ingress.kubernetes.io/scheme: internet-facing
+alb.ingress.kubernetes.io/target-type: ip
+alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:ACCOUNT:certificate/CERT-ID
+alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+alb.ingress.kubernetes.io/ssl-redirect: "443"
+alb.ingress.kubernetes.io/healthcheck-path: /health
+spec:
+rules:
+- host: streamingapp.example.com
+http:
+paths:
+- path: /api/auth
+pathType: Prefix
+backend:
+service:
+name: auth-service
+port:
+number: 3001
+- path: /api/streaming
+pathType: Prefix
+backend:
+service:
+name: streaming-service
+port:
+number: 3002
+- path: /api/admin
+pathType: Prefix
+backend:
+service:
+name: admin-service
+port:
+number: 3003
+- path: /socket.io
+pathType: Prefix
+backend:
+service:
+name: chat-service
+port:
+number: 3004
+- path: /
+pathType: Prefix
+backend:
+service:
+name: frontend-service
+port:
+number: 80

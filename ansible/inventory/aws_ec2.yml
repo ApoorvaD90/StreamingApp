@@ -1,0 +1,11 @@
+plugin: aws_ec2
+regions:
+  - us-east-1
+filters:
+  tag:Project: StreamingApp
+  instance-state-name: running
+keyed_groups:
+  - key: tags.Role
+    prefix: tag_Role
+hostnames:
+  - private-ip-address

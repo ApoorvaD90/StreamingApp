@@ -1,0 +1,27 @@
+---
+- name: Update apt cache and upgrade all packages
+  apt:
+    update_cache: yes
+    upgrade: dist
+
+- name: Install NTP for time synchronization
+  apt:
+    name: ntp
+    state: present
+
+- name: Ensure NTP is enabled and running
+  systemd:
+    name: ntp
+    enabled: true
+    state: started
+  notify: restart ntp
+
+- name: Disable swap
+  command: swapoff -a
+  when: ansible_swaptotal_mb > 0
+
+- name: Remove swap entry from /etc/fstab
+  lineinfile:
+    path: /etc/fstab
+    regexp: '^\s*[^#].*\sswap\s'
+    state: absent

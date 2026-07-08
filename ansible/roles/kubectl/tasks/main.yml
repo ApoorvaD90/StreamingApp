@@ -1,0 +1,27 @@
+---
+- name: Install kubectl
+  get_url:
+    url: https://dl.k8s.io/release/v1.29.0/bin/linux/amd64/kubectl
+    dest: /usr/local/bin/kubectl
+    mode: '0755'
+    
+- name: Install Helm
+  shell: |
+    curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+  args:
+    creates: /usr/local/bin/helm
+    
+- name: Install AWS CLI v2
+  shell: |
+    curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+    unzip -q /tmp/awscliv2.zip -d /tmp
+    /tmp/aws/install
+  args:
+    creates: /usr/local/bin/aws
+    
+- name: Install Terraform
+  unarchive:
+    src: https://releases.hashicorp.com/terraform/1.7.0/terraform_1.7.0_linux_amd64.zip
+    dest: /usr/local/bin/
+    remote_src: yes
+    mode: '0755'

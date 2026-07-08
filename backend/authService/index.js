@@ -34,7 +34,7 @@ require('./util/conn');
 const healthCheckRoute = require('./routes/healthCheck.route');
 const userRoute = require('./routes/user.route');
 
-app.use('/health', healthCheckRoute);
+app.use('/api/health', healthCheckRoute);
 app.use('/api', userRoute); // Changed from /apiv1 to /api
 
 // Error handling middleware

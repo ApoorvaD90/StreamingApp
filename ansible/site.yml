@@ -1,0 +1,16 @@
+---
+- name: Configure Jenkins CI Server
+  hosts: tag_Role_jenkins
+  become: true
+  roles:
+    - common
+    - docker
+    - kubectl
+    - jenkins
+    
+- name: Configure Application Nodes
+  hosts: tag_Role_appnode
+  become: true
+  roles:
+    - common
+    - docker

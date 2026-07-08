@@ -2,11 +2,11 @@ FROM node:18-alpine
 
 WORKDIR /app/chatService
 
-COPY package*.json ./
+COPY chatService/package*.json ./
 
 RUN npm install --production
 
-COPY . .
+COPY chatService/. ./
 
 ENV NODE_ENV=production
 

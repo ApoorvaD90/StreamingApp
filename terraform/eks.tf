@@ -16,6 +16,7 @@ module "eks" {
       disk_size      = 20
       labels         = { Environment = var.environment }
       tags           = { AutoScaling = "enabled" }
+      capacity_type  = "SPOT"
     }
   }
   cluster_addons = {

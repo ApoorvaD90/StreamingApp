@@ -10,6 +10,12 @@
     curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
   args:
     creates: /usr/local/bin/helm
+
+- name: Install unzip
+  apt:
+    name: unzip
+    state: present
+    update_cache: yes
     
 - name: Install AWS CLI v2
   shell: |

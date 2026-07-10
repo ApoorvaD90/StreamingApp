@@ -1,13 +1,13 @@
 variable "aws_region" { default = "us-east-1" }
 variable "environment" { default = "production" }
 variable "cluster_name" { default = "streamingapp-cluster" }
-variable "cluster_version" { default = "1.29" }
+variable "cluster_version" { default = "1.33" }
 variable "vpc_cidr" { default = "10.0.0.0/16" }
 variable "private_subnets" { default = ["10.0.1.0/24", "10.0.2.0/24"] }
 variable "public_subnets" { default = ["10.0.101.0/24", "10.0.102.0/24"] }
-variable "node_instance" { default = "t3.medium" }
+variable "node_instance" { default = "t3.small" }
 variable "node_min" { default = 2 }
 variable "node_max" { default = 6 }
 variable "node_desired" { default = 2 }
 variable "s3_bucket_name" { default = "streamingapp-videos" }
-variable "admin_cidr" { default = "203.0.113.0/32" }
+variable "admin_cidr" { default = "103.195.203.146/32" }

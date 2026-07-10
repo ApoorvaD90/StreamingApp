@@ -25,3 +25,13 @@ resource "aws_s3_bucket_public_access_block" "videos" {
   ignore_public_acls      = true
   restrict_public_buckets = true
 }
+
+resource "aws_s3_bucket_intelligent_tiering_configuration" "videos" {
+  bucket = aws_s3_bucket.videos.id
+  name   = "EntireBucket"
+  status = "Enabled"
+  tiering {
+    access_tier = "ARCHIVE_ACCESS"
+    days        = 90
+  }
+}

@@ -13,7 +13,7 @@ data "aws_ami" "ubuntu" {
 
 resource "aws_key_pair" "streamingapp" {
   key_name   = "streamingapp-key"
-  public_key = file("C:/Users/Apoorva/.ssh/streamingapp-key.pub")
+  public_key = file(var.ssh_public_key_path)
 }
 
 resource "aws_instance" "jenkins" {

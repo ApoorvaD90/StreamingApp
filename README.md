@@ -23,6 +23,7 @@
 - [Jenkins CI/CD Pipeline](#jenkins-cicd-pipeline)
 - [Monitoring — Prometheus & Grafana](#monitoring--prometheus--grafana)
 - [Feature Highlights](#feature-highlights)
+- [Deployment Progress](#deployment-progress)
 - [Repository Structure](#repository-structure)
 - [License](#license)
 
@@ -596,6 +597,23 @@ Alerts route to Slack via Alertmanager → `#devops-alerts`.
 - **Horizontal Pod Autoscaling** on Auth, Streaming, and Chat services based on CPU utilisation.
 - **Zero-downtime deployments** via RollingUpdate strategy (`maxUnavailable: 0`).
 - **Full observability** with Prometheus metrics, Grafana dashboards, and Slack alerting.
+
+---
+
+## Deployment Progress
+
+Full status log lives in [`docs/Sprint 2 progress.docx`](docs/Sprint%202%20progress.docx) (with a slide summary in [`docs/Sprint 2 Progress - App Live.pptx`](docs/Sprint%202%20Progress%20-%20App%20Live.pptx)). Progress below tracks the path from provisioning through confirming the application is live on real AWS infrastructure — not a local demo.
+
+- [x] **AWS Identity & CLI Setup** — dedicated IAM user created for programmatic Terraform/CLI access; AWS CLI configured and verified
+- [x] **Terraform Backend Bootstrap** — `streamingapp-tfstate` S3 bucket (remote state) and `streamingapp-tflock` DynamoDB table (state locking) created and bootstrapped ahead of the main config, then `terraform init` re-run against the new backend
+- [x] **Networking** — VPC created; 2 public + 2 private subnets; 1 NAT Gateway; 1 Internet Gateway; public and private route tables configured
+- [x] **Compute, Registry & Storage** — EKS cluster provisioned with node group and worker nodes; Jenkins EC2 instance up; ECR repositories created with images pushed; S3 and DynamoDB resources provisioned
+- [x] **Kubernetes RBAC for Terraform** — Terraform identity granted RBAC access on the EKS cluster so kubectl/Helm can authenticate against it
+- [x] **Ansible Configuration of Jenkins EC2** — new SSH key pair generated and wired into `EC2.tf`; key copied into WSL's native filesystem; Ansible playbook run against the dynamic AWS inventory over real SSH, zero failures
+- [x] **Docker Image Build & Push to ECR** — `frontend`, `auth-service`, `streaming-service`, `admin-service`, and `chat-service` images built and pushed to their ECR repositories
+- [x] **Application Deployment via Helm** — real application secret populated; MongoDB and core app components deployed; all 5 services deployed via Helm with the image tag overridden to the versions just pushed; all pods confirmed `Running`
+- [x] **Load Balancer, Ingress & Pipeline Test** — AWS Load Balancer Controller installed and Ingress configured for external access; Jenkinsfile run through Jenkins to validate the CI/CD pipeline end to end
+- [x] **Result — Application Verified Live** — traffic reaching the app through the Load Balancer and Ingress, confirmed on real AWS infrastructure
 
 ---
 

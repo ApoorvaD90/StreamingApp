@@ -7,7 +7,7 @@
     "dev": "nodemon index.js",
     "start": "node index.js",
     "seed": "node scripts/seedVideos.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"no tests specified\" && exit 0"
   },
   "keywords": [],
   "author": "",

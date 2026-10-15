@@ -18,6 +18,7 @@ spec:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: {{ $svc.hpa.cpuUtilization }}--
+          averageUtilization: {{ $svc.hpa.cpuUtilization }}
+---
 {{- end }}
 {{- end }}

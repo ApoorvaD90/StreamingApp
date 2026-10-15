@@ -1,0 +1,27 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: streamingapp-ingress-api
+  namespace: streamingapp
+  annotations:
+    kubernetes.io/ingress.class: "alb"
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/group.name: streamingapp
+    alb.ingress.kubernetes.io/healthcheck-path: /api/health
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /api/auth
+            pathType: Prefix
+            backend: { service: { name: auth-service, port: { number: 3001 } } }
+          - path: /api/streaming
+            pathType: Prefix
+            backend: { service: { name: streaming-service, port: { number: 3002 } } }
+          - path: /api/admin
+            pathType: Prefix
+            backend: { service: { name: admin-service, port: { number: 3003 } } }
+          - path: /socket.io
+            pathType: Prefix
+            backend: { service: { name: chat-service, port: { number: 3004 } } }

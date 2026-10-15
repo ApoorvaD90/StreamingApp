@@ -35,6 +35,7 @@ const healthCheckRoute = require('./routes/healthCheck.route');
 const userRoute = require('./routes/user.route');
 
 app.use('/api/health', healthCheckRoute);
+app.use('/api/auth', userRoute); // ALB Ingress and nginx route /api/auth/* here
 app.use('/api', userRoute); // Changed from /apiv1 to /api
 
 // Error handling middleware

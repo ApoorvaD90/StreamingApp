@@ -1,9 +1,13 @@
 global:
-  imageRegistry: <AWS_ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com
-  imageTag: latest
+  # Both intentionally empty and required by the templates (no account ID in code, no 'latest').
+  # Jenkins resolves them at runtime: registry from `aws sts get-caller-identity`, tag = git SHA.
+  imageRegistry: ""
+  imageTag: ""
   namespace: streamingapp
   secretName: streamingapp-secrets
 
+# MongoDB (k8s/mongo-statefulset.yaml) and the ALB Ingress (k8s/ingress-*.yaml)
+# are applied by the Jenkins Deploy stage, not by this chart.
 services:
   frontend:
     enabled: true
@@ -12,6 +16,7 @@ services:
       name: streamingapp/frontend
     service:
       port: 80
+    healthPath: /health # served by nginx.conf
     resources:
       requests: { cpu: 50m, memory: 64Mi }
       limits: { cpu: 200m, memory: 128Mi }
@@ -68,12 +73,7 @@ services:
       minReplicas: 2
       maxReplicas: 6
       cpuUtilization: 70
-
-mongodb:
-  enabled: true
-  storageSize: 20Gi
-
-ingress:
-  enabled: true
-  host: streamingapp.example.com
-  certArn: arn:aws:acm:us-east-1:ACCOUNT:certificate/CERT-ID
+    # CPU requests are required for the HPA to compute utilisation
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits: { cpu: 300m, memory: 256Mi }

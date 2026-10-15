@@ -6,8 +6,12 @@
     - common
     - docker
     - kubectl
-    - jenkins
-    
+    - ci_tools
+    # Tagged so the Jenkins-run pipeline can skip it (--skip-tags jenkins):
+    # Jenkins must never reinstall/restart itself from inside its own job
+    - role: jenkins
+      tags: [jenkins]
+
 - name: Configure Application Nodes
   hosts: tag_Role_appnode
   become: true

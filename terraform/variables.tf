@@ -19,7 +19,7 @@ variable "cluster_name" {
 variable "cluster_version" {
   type        = string
   description = "Kubernetes version for the EKS cluster. Must be a version currently supported by AWS EKS."
-  default     = "1.33"
+  default     = "1.35" # standard support until 2027-03; versions in extended support cost 6x
 }
 
 variable "vpc_cidr" {
@@ -70,14 +70,59 @@ variable "s3_bucket_name" {
   default     = "streamingapp-videos"
 }
 
+# No default on purpose: must be supplied explicitly (TF_VAR_admin_cidr locally,
+# the 'admin-cidr' credential in Jenkins) so access is never silently opened up.
 variable "admin_cidr" {
   type        = string
-  description = "Single admin IP (CIDR /32) allowed SSH and Jenkins UI access. Must be updated whenever the admin's public IP changes."
-  default     = "103.197.75.231/32"
+  description = "Single admin IP as a /32 CIDR, allowed SSH, Jenkins UI and EKS API access. Update whenever the admin's public IP changes."
+
+  validation {
+    condition     = can(cidrhost(var.admin_cidr, 0)) && endswith(var.admin_cidr, "/32")
+    error_message = "admin_cidr must be a single host CIDR like 203.0.113.10/32 (0.0.0.0/0 and wider ranges are rejected)."
+  }
+}
+
+# Pinned Ubuntu 22.04 AMI for Jenkins (no most_recent lookup), so every apply uses the same image.
+# To move to a newer image deliberately, look up Canonical's current one:
+#   aws ssm get-parameter --name /aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id --query Parameter.Value --output text
+variable "jenkins_ami_id" {
+  type        = string
+  description = "Exact AMI ID for the Jenkins EC2 instance (Ubuntu 22.04, us-east-1)."
+  default     = "ami-062944a84867f2386" # Ubuntu 22.04 LTS, us-east-1 (Canonical SSM parameter, Oct 2026)
+
+  validation {
+    condition     = can(regex("^ami-[0-9a-f]{8,17}$", var.jenkins_ami_id))
+    error_message = "jenkins_ami_id must be pinned to an exact AMI ID like ami-0abcdef1234567890 (see the aws ssm get-parameter command above)."
+  }
+}
+
+# Pinned add-on versions so every apply installs exactly the same build (no most_recent drift).
+# Values are the EKS defaults for cluster_version. When changing cluster_version, look them up with:
+#   aws eks describe-addon-versions --addon-name <name> --kubernetes-version <version> --query "addons[0].addonVersions[?compatibilities[0].defaultVersion==`true`].addonVersion | [0]"
+variable "eks_addon_versions" {
+  type        = map(string)
+  description = "Pinned EKS add-on versions keyed by add-on name."
+  default = {
+    "coredns"            = "v1.13.2-eksbuild.50"
+    "kube-proxy"         = "v1.35.3-eksbuild.29"
+    "vpc-cni"            = "v1.22.4-eksbuild.3"
+    "aws-ebs-csi-driver" = "v1.67.0-eksbuild.1"
+  }
+
+  validation {
+    condition     = alltrue([for v in values(var.eks_addon_versions) : can(regex("^v[0-9]+\\.[0-9]+\\.[0-9]+-eksbuild\\.[0-9]+$", v))])
+    error_message = "Every add-on version must be pinned to an exact version like v1.19.2-eksbuild.1 (see the aws eks describe-addon-versions command above)."
+  }
 }
 
 variable "ssh_public_key_path" {
   type        = string
-  description = "Local filesystem path to the SSH public key used for the Jenkins EC2 key pair."
-  default     = "C:/Users/Apoorva/.ssh/streamingapp-key.pub"
+  description = "Path (relative to this folder) to the SSH public key used for the Jenkins EC2 key pair. Committed so Jenkins can run Terraform too."
+  default     = "keys/streamingapp-key.pub"
+}
+
+variable "github_webhook_cidrs" {
+  type        = list(string)
+  description = "GitHub webhook source IP ranges (from https://api.github.com/meta -> hooks), allowed to reach Jenkins on 8080."
+  default     = ["192.30.252.0/22", "185.199.108.0/22", "140.82.112.0/20", "143.55.64.0/20"]
 }

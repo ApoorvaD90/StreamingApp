@@ -1,0 +1,94 @@
+---
+# Configures the EKS cluster itself: add-ons the app depends on, namespace and secret.
+# Runs on the Jenkins host (localhost) using its IAM role. Inputs come from env vars
+# set by jenkins/Jenkinsfile.ansible (Terraform outputs + Jenkins credentials).
+- name: Bootstrap EKS add-ons and application config
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    cluster_name: streamingapp-cluster
+    region: us-east-1
+    namespace: streamingapp
+    vpc_id: "{{ lookup('env', 'VPC_ID') }}"
+    lb_role_arn: "{{ lookup('env', 'LB_ROLE_ARN') }}"
+    app_url: "{{ lookup('env', 'APP_PUBLIC_URL') }}"
+    # Pinned chart versions so every run installs exactly the same release
+    metrics_server_chart_version: "3.14.0"
+    lb_controller_chart_version: "1.17.1" # controller v2.17; the IAM policy attached by Terraform targets v2
+  tasks:
+    - name: Fail early if required inputs are missing
+      assert:
+        that:
+          - vpc_id | length > 0
+          - lb_role_arn | length > 0
+          - lookup('env', 'JWT_SECRET') | length > 0
+        fail_msg: "VPC_ID, LB_ROLE_ARN and JWT_SECRET must be set"
+
+    - name: Write kubeconfig for the EKS cluster
+      command: aws eks update-kubeconfig --name {{ cluster_name }} --region {{ region }}
+      changed_when: false
+
+    - name: Install metrics-server (required for HPA CPU metrics)
+      kubernetes.core.helm:
+        name: metrics-server
+        chart_ref: metrics-server
+        chart_version: "{{ metrics_server_chart_version }}"
+        chart_repo_url: https://kubernetes-sigs.github.io/metrics-server/
+        release_namespace: kube-system
+        wait: true
+
+    - name: Install AWS Load Balancer Controller (creates the ALB from the Ingress)
+      kubernetes.core.helm:
+        name: aws-load-balancer-controller
+        chart_ref: aws-load-balancer-controller
+        chart_version: "{{ lb_controller_chart_version }}"
+        chart_repo_url: https://aws.github.io/eks-charts
+        release_namespace: kube-system
+        wait: true
+        values:
+          clusterName: "{{ cluster_name }}"
+          region: "{{ region }}"
+          vpcId: "{{ vpc_id }}"
+          serviceAccount:
+            create: true
+            name: aws-load-balancer-controller
+            annotations:
+              eks.amazonaws.com/role-arn: "{{ lb_role_arn }}"
+
+    - name: Create application namespace
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ playbook_dir }}/../k8s/namespace.yaml"
+
+    # No AWS keys: the S3 client falls back to the node IAM role, which has the S3 policy
+    - name: Create or refresh application secret
+      no_log: true
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: streamingapp-secrets
+            namespace: "{{ namespace }}"
+          type: Opaque
+          # base64 'data' (not stringData) so the task reports 'changed' only when a value really changes
+          data:
+            JWT_SECRET: "{{ lookup('env', 'JWT_SECRET') | b64encode }}"
+            MONGO_URI: "{{ 'mongodb://mongo-service:27017/streamingapp' | b64encode }}"
+            AWS_REGION: "{{ region | b64encode }}"
+            AWS_S3_BUCKET: "{{ lookup('env', 'S3_BUCKET') | b64encode }}"
+            CLIENT_URLS: "{{ app_url | b64encode }}"
+            STREAMING_PUBLIC_URL: "{{ app_url | b64encode }}"
+      register: app_secret
+
+    # Pods read the secret only at start-up (envFrom), so restart them when it changes
+    # (e.g. CLIENT_URLS set once the ALB exists). No-op before the first app deploy.
+    - name: Restart app deployments to pick up the changed secret
+      command: kubectl rollout restart deployment -n {{ namespace }} -l chart
+      when: app_secret.changed
+      register: restart
+      changed_when: "'restarted' in restart.stdout"
+      failed_when: false

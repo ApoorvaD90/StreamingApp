@@ -1,22 +1,29 @@
 ---
-- name: Install kubectl
+- name: Install kubectl {{ kubectl_version }}
   get_url:
-    url: https://dl.k8s.io/release/v1.29.0/bin/linux/amd64/kubectl
+    url: "https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/amd64/kubectl"
     dest: /usr/local/bin/kubectl
     mode: '0755'
-    
-- name: Install Helm
+    checksum: "sha256:https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/amd64/kubectl.sha256"
+
+- name: Check installed Helm version
+  command: /usr/local/bin/helm version --short
+  register: helm_installed
+  changed_when: false
+  failed_when: false
+
+- name: Install Helm {{ helm_version }}
   shell: |
-    curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-  args:
-    creates: /usr/local/bin/helm
- 
+    curl -fsSL https://get.helm.sh/helm-{{ helm_version }}-linux-amd64.tar.gz | tar -xz -C /tmp
+    install -m 0755 /tmp/linux-amd64/helm /usr/local/bin/helm
+  when: helm_version not in (helm_installed.stdout | default(''))
+
 - name: Install unzip
   apt:
     name: unzip
     state: present
     update_cache: yes
-    
+
 - name: Install AWS CLI v2
   shell: |
     curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
@@ -24,10 +31,10 @@
     /tmp/aws/install
   args:
     creates: /usr/local/bin/aws
-    
-- name: Install Terraform
+
+- name: Install Terraform {{ terraform_version }}
   unarchive:
-    src: https://releases.hashicorp.com/terraform/1.7.0/terraform_1.7.0_linux_amd64.zip
+    src: "https://releases.hashicorp.com/terraform/{{ terraform_version }}/terraform_{{ terraform_version }}_linux_amd64.zip"
     dest: /usr/local/bin/
     remote_src: yes
     mode: '0755'

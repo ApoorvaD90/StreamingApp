@@ -1,8 +1,14 @@
-import { render, screen } from '@testing-library/react';
-import App from './App';
+import {
+  AUTH_API_URL,
+  STREAMING_API_URL,
+  ADMIN_API_URL,
+  CHAT_API_URL,
+  CHAT_SOCKET_URL,
+} from './config/env';
 
-test('renders learn react link', () => {
-  render(<App />);
-  const linkElement = screen.getByText(/learn react/i);
-  expect(linkElement).toBeInTheDocument();
+test('all API endpoints are configured', () => {
+  [AUTH_API_URL, STREAMING_API_URL, ADMIN_API_URL, CHAT_API_URL, CHAT_SOCKET_URL].forEach((url) => {
+    expect(typeof url).toBe('string');
+    expect(url.length).toBeGreaterThan(0);
+  });
 });

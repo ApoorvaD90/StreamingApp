@@ -1,0 +1,74 @@
+// Sprint 2: AWS infrastructure provisioning (job: streamingapp-infra)
+// Uses the Jenkins EC2 IAM role; state lives in S3 with DynamoDB locking (terraform/provider.tf).
+pipeline {
+  agent any
+  parameters {
+    choice(name: 'ACTION', choices: ['plan', 'apply'],
+           description: 'plan = preview only; apply = provision. Destroy is laptop-only: Jenkins runs on this infrastructure.')
+  }
+  environment {
+    AWS_DEFAULT_REGION = 'us-east-1'
+    TF_IN_AUTOMATION   = 'true'
+  }
+  options {
+    buildDiscarder(logRotator(numToKeepStr: '20'))
+    disableConcurrentBuilds()
+    timeout(time: 60, unit: 'MINUTES')
+    timestamps()
+  }
+  stages {
+    stage('Init & Validate') {
+      steps {
+        dir('terraform') {
+          sh '''
+            terraform init -input=false
+            terraform fmt -check -recursive
+            terraform validate
+          '''
+        }
+      }
+    }
+    stage('Plan') {
+      steps {
+        dir('terraform') {
+          // admin_cidr has no default: supplied at runtime from a Jenkins credential, never from code.
+          // The saved tfplan carries the value into Apply.
+          withCredentials([string(credentialsId: 'admin-cidr', variable: 'TF_VAR_admin_cidr')]) {
+            sh '''
+              terraform plan -input=false -out=tfplan
+              terraform show -no-color tfplan > tfplan.txt
+            '''
+          }
+        }
+        archiveArtifacts artifacts: 'terraform/tfplan.txt'
+      }
+    }
+    stage('Approve') {
+      when { expression { params.ACTION == 'apply' } }
+      steps {
+        input message: 'Review the plan (archived as tfplan.txt). Apply it?'
+      }
+    }
+    stage('Apply') {
+      when { expression { params.ACTION == 'apply' } }
+      steps {
+        dir('terraform') {
+          sh 'terraform apply -input=false tfplan'
+        }
+      }
+    }
+  }
+  post {
+    success {
+      script {
+        // Sprint 3: configuration management runs right after provisioning
+        if (params.ACTION == 'apply') {
+          build job: 'streamingapp-ansible', wait: false
+        }
+      }
+    }
+    always {
+      cleanWs()
+    }
+  }
+}

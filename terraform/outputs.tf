@@ -24,6 +24,16 @@ output "s3_bucket_name" {
 }
 
 output "jenkins_public_ip" {
-  description = "Public IP address of the Jenkins CI/CD EC2 instance."
-  value       = aws_instance.jenkins.public_ip
+  description = "Elastic IP of the Jenkins CI/CD EC2 instance."
+  value       = aws_eip.jenkins.public_ip
+}
+
+output "jenkins_role_arn" {
+  description = "IAM role attached to the Jenkins EC2 instance."
+  value       = aws_iam_role.jenkins.arn
+}
+
+output "lb_controller_role_arn" {
+  description = "IRSA role ARN for the AWS Load Balancer Controller service account."
+  value       = module.lb_controller_irsa.iam_role_arn
 }

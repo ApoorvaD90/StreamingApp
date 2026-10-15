@@ -1,0 +1,29 @@
+---
+- name: Ensure keyrings directory exists
+  file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: '0755'
+
+- name: Download NodeSource GPG key
+  get_url:
+    url: https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key
+    dest: /etc/apt/keyrings/nodesource.asc
+    mode: '0644'
+
+- name: Add NodeSource repository (Node {{ nodejs_major }}, used by the pipeline's unit-test stage)
+  apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/nodesource.asc] https://deb.nodesource.com/node_{{ nodejs_major }}.x nodistro main"
+    filename: nodesource
+    state: present
+
+- name: Install Node.js and pip
+  apt:
+    name: [nodejs, python3-pip]
+    state: present
+    update_cache: yes
+
+- name: Install Ansible and the AWS/Kubernetes Python libraries it needs
+  pip:
+    name: ["ansible=={{ ansible_pip_version }}", boto3, botocore, kubernetes]
+    state: present

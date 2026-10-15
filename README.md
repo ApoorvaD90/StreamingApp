@@ -2,6 +2,8 @@
 
 > Stream premium video content, host live watch parties, and manage your catalogue with a modern microservices architecture. The platform ships with a production-ready admin portal, real-time chat, S3-backed streaming, and a cinematic React frontend — deployed on AWS EKS via a fully automated Jenkins CI/CD pipeline.
 
+> **Deploying?** Follow the step-by-step [Execution Runbook](docs/RUNBOOK.md): local Docker validation → Terraform → Ansible → Jenkins setup → CI/CD to EKS, with verification and troubleshooting.
+
 ---
 
 ## Table of Contents
@@ -301,7 +303,7 @@ graph TB
 | **Orchestration** | AWS EKS (Kubernetes 1.29) |
 | **Ingress** | AWS ALB + Nginx Ingress Controller |
 | **CI/CD** | Jenkins (EC2 t3.medium) |
-| **Infrastructure as Code** | Terraform >= 1.6 (AWS provider ~> 5.0) |
+| **Infrastructure as Code** | Terraform 1.15.7 (pinned; AWS provider ~> 5.0) |
 | **Configuration Management** | Ansible + AWS EC2 dynamic inventory |
 | **Packaging** | Helm 3 |
 | **Object Storage** | AWS S3 + CloudFront CDN (optional) |
@@ -419,30 +421,25 @@ cd frontend && npm install && npm start
 
 ## Kubernetes Deployment (AWS EKS)
 
-All Kubernetes manifests are in the `k8s/` directory.
+Deployment is automated by Jenkins (`Jenkinsfile`, Deploy stage). The app secret, metrics-server and the AWS Load Balancer Controller are created by `ansible/k8s-bootstrap.yml`; the five services come from the Helm chart; `k8s/` holds only the namespace, MongoDB and Ingress. The equivalent manual steps:
 
 ```bash
 # 1. Configure kubectl
 aws eks update-kubeconfig --name streamingapp-cluster --region us-east-1
 
-# 2. Create namespace
+# 2. Namespace, MongoDB StatefulSet
 kubectl apply -f k8s/namespace.yaml
-
-# 3. Create secrets (replace placeholder values first)
-kubectl apply -f k8s/secrets.yaml
-
-# 4. Deploy MongoDB StatefulSet
 kubectl apply -f k8s/mongo-statefulset.yaml
 
-# 5. Deploy all microservices
-kubectl apply -f k8s/auth-service.yaml
-kubectl apply -f k8s/streaming-service.yaml
-kubectl apply -f k8s/admin-service.yaml
-kubectl apply -f k8s/chat-service.yaml
-kubectl apply -f k8s/frontend.yaml
+# 3. All five services (registry and tag are required - no account ID in code, no 'latest')
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+helm upgrade --install streamingapp ./helm/streamingapp -n streamingapp \
+  -f helm/values-prod.yaml \
+  --set global.imageRegistry=$ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com \
+  --set global.imageTag=<GIT_SHA> --atomic --wait
 
-# 6. Apply Ingress (requires ALB Ingress Controller installed)
-kubectl apply -f k8s/ingress.yaml
+# 4. Ingress (ALB, requires the AWS Load Balancer Controller)
+kubectl apply -f k8s/ingress-api.yaml -f k8s/ingress-frontend.yaml
 ```
 
 ### HPA Scaling Targets
@@ -552,9 +549,12 @@ The `Jenkinsfile` at the repository root defines a 9-stage declarative pipeline 
 
 | Credential ID | Type | Used For |
 |---|---|---|
-| `aws-account-id` | Secret text | ECR registry URL |
-| `aws-credentials` | AWS credentials | ECR login, EKS, Terraform |
-| `github-ssh-key` | SSH key | Repository checkout |
+| `github-token` | Username + PAT | Repository checkout / multibranch scans |
+| `streamingapp-ssh-key` | SSH username + private key | Ansible SSH to EC2 |
+| `jwt-secret` | Secret text | App secret created by `ansible/k8s-bootstrap.yml` |
+| `admin-cidr` | Secret text | `TF_VAR_admin_cidr` for the Terraform job (no default in code) |
+
+AWS access uses the Jenkins EC2 IAM role (`streamingapp-jenkins-role`); no AWS keys or account IDs are stored in Jenkins or in code. The account ID is resolved at runtime with `aws sts get-caller-identity`.
 
 ---
 
@@ -629,16 +629,11 @@ StreamingApp/
 │   ├── streamingService/        # Video catalogue — :3002
 │   ├── adminService/            # Admin uploads — :3003
 │   └── chatService/             # Socket.IO chat — :3004
-├── k8s/                         # Kubernetes YAML manifests
+├── k8s/                         # Manifests applied by Jenkins alongside the Helm chart
 │   ├── namespace.yaml
-│   ├── secrets.yaml
 │   ├── mongo-statefulset.yaml
-│   ├── auth-service.yaml
-│   ├── streaming-service.yaml
-│   ├── admin-service.yaml
-│   ├── chat-service.yaml
-│   ├── frontend.yaml
-│   └── ingress.yaml
+│   ├── ingress-api.yaml         # ALB rules for /api/* and /socket.io
+│   └── ingress-frontend.yaml    # ALB catch-all rule for the SPA
 ├── helm/
 │   ├── streamingapp/            # Main Helm chart
 │   │   ├── Chart.yaml

@@ -1,8 +1,14 @@
 ---
-- name: Update apt cache and upgrade all packages
+- name: Update apt cache
   apt:
     update_cache: yes
+    cache_valid_time: 3600
+
+# Opt-in (-e upgrade_packages=true) so pipeline runs never upgrade/restart services mid-job
+- name: Upgrade all packages
+  apt:
     upgrade: dist
+  when: upgrade_packages | default(false) | bool
 
 - name: Install NTP for time synchronization
   apt:

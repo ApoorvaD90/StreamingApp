@@ -7,7 +7,7 @@
     "dev": "nodemon index.js",
     "start": "node index.js",
     "seed": "node scripts/seedVideos.js",
-    "test": "echo \"no tests specified\" && exit 0"
+    "test": "jest"
   },
   "keywords": [],
   "author": "",
@@ -22,5 +22,8 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.3.3",
     "nodemon": "^3.1.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
   }
 }

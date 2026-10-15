@@ -1,10 +1,9 @@
-global:
-  imageTag: "REPLACED_BY_JENKINS_AT_BUILD_TIME"
-authService:
-  replicaCount: 3
-streamingService:
-  replicaCount: 4
-  hpa:
-    maxReplicas: 12
-chatService:
-  replicaCount: 3
+# Production overrides. Keys must mirror streamingapp/values.yaml (services.<name>.*).
+# imageRegistry and imageTag are passed by Jenkins with --set.
+# Keep totals modest: 2 x t3.small nodes fit ~22 pods including system pods.
+services:
+  streaming-service:
+    hpa:
+      minReplicas: 2
+      maxReplicas: 10
+      cpuUtilization: 60

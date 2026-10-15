@@ -19,7 +19,25 @@ resource "aws_security_group" "jenkins" {
     cidr_blocks = [var.admin_cidr]
   }
 
+  ingress {
+    description = "GitHub webhooks to Jenkins"
+    from_port   = 8080
+    to_port     = 8080
+    protocol    = "tcp"
+    cidr_blocks = var.github_webhook_cidrs
+  }
+
+  ingress {
+    description = "SSH from inside the VPC (Ansible run by Jenkins)"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = [var.vpc_cidr]
+  }
+
+  # Outbound only (no inbound exposure): Jenkins must reach apt, ECR, GitHub, npm and Docker Hub
   egress {
+    description = "Outbound internet access for package, image and source downloads"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"

@@ -9,6 +9,8 @@ metadata:
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/group.name: streamingapp
     alb.ingress.kubernetes.io/healthcheck-path: /health
+    # Evaluate the "/" catch-all after the /api/* rules from ingress-api.yaml
+    alb.ingress.kubernetes.io/group.order: "100"
 spec:
   rules:
     - http:

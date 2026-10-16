@@ -115,6 +115,12 @@ variable "eks_addon_versions" {
   }
 }
 
+variable "admin_iam_user" {
+  type        = string
+  description = "Name of the IAM user that administers the project (EKS cluster admin, KMS key admin)."
+  default     = "streamingapp-admin"
+}
+
 variable "ssh_public_key_path" {
   type        = string
   description = "Path (relative to this folder) to the SSH public key used for the Jenkins EC2 key pair. Committed so Jenkins can run Terraform too."

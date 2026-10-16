@@ -11,8 +11,13 @@ module "eks" {
   cluster_endpoint_public_access_cidrs = [var.admin_cidr]
   cluster_endpoint_private_access      = true
 
-  # The IAM user that runs the first apply gets cluster-admin (kubectl from the laptop)
-  enable_cluster_creator_admin_permissions = true
+  # Cluster admins are listed explicitly (see access_entries below). The module's
+  # 'creator' option follows whoever runs Terraform (laptop user vs Jenkins role)
+  # and would flip the admin entry back and forth between them.
+  enable_cluster_creator_admin_permissions = false
+
+  # Same reason: fixed key administrators instead of 'current caller'
+  kms_key_administrators = [local.admin_user_arn, aws_iam_role.jenkins.arn]
 
   cluster_security_group_additional_rules = {
     jenkins_to_api = {
@@ -51,8 +56,19 @@ module "eks" {
     }
   }
 
-  # Lets the Jenkins EC2 role run kubectl/helm against the cluster
   access_entries = {
+    # The admin IAM user: kubectl/helm from the laptop
+    admin_user = {
+      principal_arn = local.admin_user_arn
+      policy_associations = {
+        admin = {
+          policy_arn   = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+          access_scope = { type = "cluster" }
+        }
+      }
+    }
+
+    # The Jenkins EC2 role: kubectl/helm from the pipelines
     jenkins = {
       principal_arn = aws_iam_role.jenkins.arn
       policy_associations = {
@@ -63,4 +79,23 @@ module "eks" {
       }
     }
   }
+}
+
+data "aws_caller_identity" "current" {}
+
+locals {
+  # Account ID resolved at runtime - never hard-coded
+  admin_user_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:user/${var.admin_iam_user}"
+}
+
+# The first apply created the admin entry under the module's 'cluster_creator' key.
+# Rename it in state instead of destroying and recreating it.
+moved {
+  from = module.eks.aws_eks_access_entry.this["cluster_creator"]
+  to   = module.eks.aws_eks_access_entry.this["admin_user"]
+}
+
+moved {
+  from = module.eks.aws_eks_access_policy_association.this["cluster_creator_admin"]
+  to   = module.eks.aws_eks_access_policy_association.this["admin_user_admin"]
 }

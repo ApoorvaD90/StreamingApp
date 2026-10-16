@@ -57,6 +57,11 @@
             annotations:
               eks.amazonaws.com/role-arn: "{{ lb_role_arn }}"
 
+    - name: Create default gp3 StorageClass (EBS CSI) for persistent volumes
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ playbook_dir }}/../k8s/storageclass.yaml"
+
     - name: Create application namespace
       kubernetes.core.k8s:
         state: present

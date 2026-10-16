@@ -1,9 +1,10 @@
 # Production overrides. Keys must mirror streamingapp/values.yaml (services.<name>.*).
 # imageRegistry and imageTag are passed by Jenkins with --set.
-# Keep totals modest: 2 x t3.small nodes fit ~22 pods including system pods.
+# Keep totals modest: 3 x t3.small nodes fit 33 pods, ~16 of them taken by cluster add-ons.
+# Services start at 1 replica; the HPAs scale them up under load.
 services:
   streaming-service:
     hpa:
-      minReplicas: 2
+      minReplicas: 1
       maxReplicas: 10
       cpuUtilization: 60

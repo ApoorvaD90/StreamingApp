@@ -49,7 +49,7 @@ variable "node_instance" {
 variable "node_min" {
   type        = number
   description = "Minimum number of EKS worker nodes."
-  default     = 2
+  default     = 3 # t3.small fits only 11 pods; cluster add-ons alone use ~14 across 2 nodes
 }
 
 variable "node_max" {
@@ -61,7 +61,7 @@ variable "node_max" {
 variable "node_desired" {
   type        = number
   description = "Desired number of EKS worker nodes at creation time."
-  default     = 2
+  default     = 3 # applied at creation only (the EKS module ignores later changes; scale with aws eks update-nodegroup-config)
 }
 
 variable "s3_bucket_name" {

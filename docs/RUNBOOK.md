@@ -224,7 +224,7 @@ Note `jenkins_public_ip` (Elastic IP). Jenkins will be at `http://<EIP>:8080` af
 **4.4 Cluster access from the laptop**
 ```powershell
 aws eks update-kubeconfig --name streamingapp-cluster --region us-east-1
-kubectl get nodes      # ✅ 2 Ready (the IAM user that ran apply is cluster admin)
+kubectl get nodes      # ✅ 3 Ready (the IAM user that ran apply is cluster admin)
 ```
 
 ---
@@ -248,7 +248,7 @@ sudo systemctl restart jenkins                          # picks up docker group 
 node -v; ansible --version | head -1; helm version --short; kubectl version --client; terraform -version | head -1
 sudo -u jenkins aws sts get-caller-identity             # ✅ ...assumed-role/streamingapp-jenkins-role/...
 sudo -u jenkins aws eks update-kubeconfig --name streamingapp-cluster --region us-east-1
-sudo -u jenkins kubectl get nodes                       # ✅ 2 Ready (access entry + private endpoint)
+sudo -u jenkins kubectl get nodes                       # ✅ 3 Ready (access entry + private endpoint)
 sudo -u jenkins docker ps                               # ✅ no permission error
 sudo cat /var/lib/jenkins/secrets/initialAdminPassword 2>/dev/null   # only for a never-unlocked Jenkins
 exit
@@ -430,4 +430,4 @@ EKS, NAT gateway, ALB and EC2 cost roughly **$6–8/day**. Between work sessions
 aws eks list-nodegroups --cluster-name streamingapp-cluster
 aws eks update-nodegroup-config --cluster-name streamingapp-cluster --nodegroup-name <name> --scaling-config minSize=0,maxSize=6,desiredSize=0
 ```
-Scale back to `minSize=2,desiredSize=2` and start Jenkins before the next session (the Elastic IP keeps the webhook URL stable). Never run `terraform destroy` from Jenkins — it runs on this infrastructure; tear down from the laptop only.
+Scale back to `minSize=3,desiredSize=3` and start Jenkins before the next session (the Elastic IP keeps the webhook URL stable). Never run `terraform destroy` from Jenkins — it runs on this infrastructure; tear down from the laptop only.

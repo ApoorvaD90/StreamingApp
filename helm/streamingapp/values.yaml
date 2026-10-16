@@ -11,7 +11,7 @@ global:
 services:
   frontend:
     enabled: true
-    replicaCount: 2
+    replicaCount: 1
     image:
       name: streamingapp/frontend
     service:
@@ -23,13 +23,13 @@ services:
 
   auth-service:
     enabled: true
-    replicaCount: 2
+    replicaCount: 1
     image:
       name: streamingapp/auth-service
     service:
       port: 3001
     hpa:
-      minReplicas: 2
+      minReplicas: 1
       maxReplicas: 6
       cpuUtilization: 70
     resources:
@@ -38,13 +38,13 @@ services:
 
   streaming-service:
     enabled: true
-    replicaCount: 2
+    replicaCount: 1
     image:
       name: streamingapp/streaming-service
     service:
       port: 3002
     hpa:
-      minReplicas: 2
+      minReplicas: 1
       maxReplicas: 8
       cpuUtilization: 60
     resources:
@@ -64,13 +64,13 @@ services:
 
   chat-service:
     enabled: true
-    replicaCount: 2
+    replicaCount: 1
     image:
       name: streamingapp/chat-service
     service:
       port: 3004
     hpa:
-      minReplicas: 2
+      minReplicas: 1
       maxReplicas: 6
       cpuUtilization: 70
     # CPU requests are required for the HPA to compute utilisation

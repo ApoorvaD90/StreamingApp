@@ -150,3 +150,6 @@ terraform.rc
 
 # Generated test artifacts
 rendered.yaml
+
+# Microsoft Office lock/temp files
+~$*

@@ -5,7 +5,7 @@ resource "aws_key_pair" "streamingapp" {
 
 resource "aws_instance" "jenkins" {
   ami                         = var.jenkins_ami_id
-  instance_type               = "t3.medium" # 4 GB RAM: npm ci + React build + Docker builds OOM on t3.small
+  instance_type               = "c7i-flex.large" # 2 vCPU / 4 GB like t3.medium, but Free Tier eligible; 2 GB OOMs on npm ci + React + Docker builds
   subnet_id                   = module.vpc.public_subnets[0]
   vpc_security_group_ids      = [aws_security_group.jenkins.id]
   key_name                    = aws_key_pair.streamingapp.key_name

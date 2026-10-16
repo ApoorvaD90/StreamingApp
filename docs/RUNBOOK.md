@@ -275,7 +275,7 @@ Open `http://<JENKINS_EIP>:8080`. On a fresh install, unlock with the password f
 **6.2 JWT secret** — on an existing cluster reuse the current value (keeps user sessions valid); on a new cluster generate one
 ```powershell
 # New cluster: generate a random 48-byte secret
-[Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(48))
+$b = New-Object byte[] 48; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); [Convert]::ToBase64String($b)
 
 # Existing cluster: read the current one instead
 $b64 = kubectl get secret streamingapp-secrets -n streamingapp -o jsonpath='{.data.JWT_SECRET}'
@@ -408,6 +408,8 @@ Suggested evidence: stage views of all three jobs, the infra → ansible downstr
 |---|---|
 | `No value for required variable "admin_cidr"` | Laptop: re-run 2.5 in the current window. Jenkins: `admin-cidr` credential missing |
 | `Invalid value for variable` | A pinned value in `variables.tf` is malformed (2.6), or the CIDR is not a `/32` |
+| `InvalidParameterCombination: ... not eligible for Free Tier` | The account is on the AWS Free plan, which only allows Free Tier instance types (`aws ec2 describe-instance-types --filters Name=free-tier-eligible,Values=true`). Jenkins uses `c7i-flex.large` and nodes `t3.small` for this reason. To use other types, upgrade the account plan in Billing |
+| `ResourceAlreadyExistsException: The specified log group already exists` (`/aws/eks/streamingapp-cluster/cluster`) | Left over from a previously deleted cluster. Before the cluster exists: `aws logs delete-log-group --log-group-name /aws/eks/streamingapp-cluster/cluster`, then plan/apply again |
 | `state snapshot was created by Terraform v1.x` | Laptop and Jenkins Terraform versions differ — both must be 1.15.7 (0.1) |
 | `kubectl` from laptop times out | Public IP changed — redo 2.5, `terraform apply`, update the `admin-cidr` credential |
 | Ansible: no hosts matched | WSL lacks AWS credentials (`aws configure` in WSL with the IAM user keys) |

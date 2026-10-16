@@ -1,5 +1,5 @@
 // Sprint 4: application CI/CD (Multibranch job: streamingapp-app)
-// Every branch: test + build + push to ECR. main/Develop: also deploy to EKS + smoke test.
+// Every branch: test + build + push to ECR. main/Develop/Sprint-3: also deploy to EKS + smoke test.
 // Infrastructure and configuration run in their own jobs: jenkins/Jenkinsfile.infra and jenkins/Jenkinsfile.ansible.
 // AWS access comes from the Jenkins EC2 IAM role (no static keys).
 pipeline {
@@ -69,7 +69,7 @@ pipeline {
     }
     // -- Stage 4: Deploy to EKS ------------------------------------
     stage('Deploy to EKS') {
-      when { anyOf { branch 'main'; branch 'Develop' } }
+      when { anyOf { branch 'main'; branch 'Develop'; branch 'Sprint-3' } }
       steps {
         sh '''
           aws eks update-kubeconfig --name $EKS_CLUSTER --region $AWS_DEFAULT_REGION
@@ -93,7 +93,7 @@ pipeline {
     }
     // -- Stage 5: Smoke Tests --------------------------------------
     stage('Smoke Tests') {
-      when { anyOf { branch 'main'; branch 'Develop' } }
+      when { anyOf { branch 'main'; branch 'Develop'; branch 'Sprint-3' } }
       steps {
         sh '''
           # In-cluster: every backend answers its health check (frontend image has busybox wget)

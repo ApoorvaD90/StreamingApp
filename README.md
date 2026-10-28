@@ -24,9 +24,11 @@
 - [Ansible — Configuration Management](#ansible--configuration-management)
 - [Jenkins CI/CD Pipeline](#jenkins-cicd-pipeline)
 - [Monitoring — Prometheus & Grafana](#monitoring--prometheus--grafana)
+- [Testing](#testing)
 - [Feature Highlights](#feature-highlights)
 - [Deployment Progress](#deployment-progress)
 - [Sprint 3 and 4 Progress](#sprint-3-and-4-progress)
+- [Sprint 5 and 6 Progress](#sprint-5-and-6-progress)
 - [Repository Structure](#repository-structure)
 - [License](#license)
 
@@ -64,7 +66,7 @@ graph TB
                 NAT[NAT Gateway]
             end
 
-            subgraph PRIVATE[Private Subnets  EKS Worker Nodes  3 x t3.small Spot]
+            subgraph PRIVATE[Private Subnets  EKS Worker Nodes  4 x t3.small Spot]
                 subgraph EKS[AWS EKS Cluster  v1.35]
                     LBC[AWS Load Balancer Controller\nmetrics-server  EBS CSI driver]
 
@@ -78,9 +80,9 @@ graph TB
                         SECRET[K8s Secret\nstreamingapp-secrets]
                     end
 
-                    subgraph MON[namespace  monitoring  - planned Sprint 5]
-                        PROM[Prometheus]
-                        GRAF[Grafana]
+                    subgraph MON[namespace  monitoring  kube-prometheus-stack]
+                        PROM[Prometheus\nnode-exporter  kube-state-metrics\n5Gi gp3  3-day retention]
+                        GRAF[Grafana\n2 dashboards from code]
                         ALERTMGR[Alertmanager]
                     end
                 end
@@ -93,7 +95,7 @@ graph TB
     end
 
     GH([GitHub\nwebhook on push])
-    SLACK([Slack\n#devops-alerts  - planned])
+    SLACK([Slack\n#devops-alerts\nalerts + Jenkins notifications])
 
     User -->|HTTP| ALB
     User -->|WebSocket| ALB
@@ -113,12 +115,14 @@ graph TB
     STREAM -->|presigned URL| S3
     ADMIN -->|PutObject| S3
 
-    PROM -.->|scrape| APP
+    PROM -.->|scrape /metrics| APP
+    PROM -.->|scrape :8080/prometheus  :9100| JENKINS
     PROM -.-> ALERTMGR
     ALERTMGR -.->|alert| SLACK
     GRAF -.->|query| PROM
 
     GH -->|webhook| JENKINS
+    JENKINS -.->|build notifications| SLACK
     JENKINS -->|docker push| ECR
     JENKINS -->|helm upgrade  private API endpoint| EKS
     JENKINS -->|terraform apply| VPC
@@ -165,9 +169,11 @@ flowchart TD
     subgraph ANSIBLE[streamingapp-ansible  -  jenkins/Jenkinsfile.ansible]
         direction TB
         A1[Read Terraform outputs\nVPC ID  LB role ARN  bucket  ALB URL]
-        A2[Configure EC2 instances\nsite.yml over private IP]
-        A3[Configure EKS cluster\nk8s-bootstrap.yml\nmetrics-server  LB controller\nStorageClass  namespace  secret]
-        A1 --> A2 --> A3
+        A0[Test alert rules\npromtool check + unit tests]
+        A2[Configure EC2 instances\nsite.yml over private IP\nincl. node_exporter]
+        A3[Configure EKS cluster\nk8s-bootstrap.yml\nmetrics-server  LB controller\nStorageClass  namespace  secret\nPrometheus  Grafana  Alertmanager]
+        A4[Verify infrastructure\nVerify monitoring]
+        A1 --> A0 --> A2 --> A3 --> A4
     end
 
     subgraph APPP[streamingapp-app  Multibranch  -  Jenkinsfile]
@@ -176,14 +182,17 @@ flowchart TD
         S2[Unit Tests\n5 Jest suites in parallel]
         S3[Docker Build and Push\n5 images  git-SHA tag  ECR]
         S4[Deploy to EKS\nMongoDB  Helm --atomic  Ingress]
-        S5[Smoke Tests\nin-cluster health  ALB checks]
-        S1 --> S2 --> S3 --> S4 --> S5
+        S5[Deployment Tests\nrollout  SHA tags  probes  HPA\nin-cluster health and metrics]
+        S6[API Tests\nthrough the ALB\nauth  access control  catalogue]
+        S7[Monitoring Check\nall targets up  rules  Grafana]
+        S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7
     end
 
     OP --> I1
     I4 -->|on success triggers| A1
+    A4 -->|on success triggers| S1
     GH -->|webhook| S1
-    S5 -->|success| OK([Deployed\nApp URL in log])
+    S7 -->|success| OK([Deployed\nApp URL in log\nSlack notification])
     S4 -->|health checks fail| RB([Helm rollback\nprevious release kept])
 
     classDef stage fill:#2496ED,stroke:#0d6ebd,color:#fff,font-weight:bold
@@ -191,7 +200,7 @@ flowchart TD
     classDef result fill:#28a745,stroke:#1e7e34,color:#fff
     classDef fail fill:#dc3545,stroke:#bd2130,color:#fff
 
-    class I1,I2,I3,I4,A1,A2,A3,S1,S2,S3,S4,S5 stage
+    class I1,I2,I3,I4,A0,A1,A2,A3,A4,S1,S2,S3,S4,S5,S6,S7 stage
     class OP,GH trigger
     class OK result
     class RB fail
@@ -262,19 +271,19 @@ graph TB
     subgraph IaC[Infrastructure as Code]
         direction LR
         TF[Terraform 1.15.7\nVPC  EKS  ECR  S3  IAM  IRSA\nSecurity Groups  Jenkins EC2\nRemote state in S3 + DynamoDB]
-        ANS[Ansible\nsite.yml  roles common docker\nkubectl ci_tools jenkins\nk8s-bootstrap.yml]
+        ANS[Ansible\nsite.yml  roles common docker\nkubectl ci_tools node_exporter jenkins\nk8s-bootstrap.yml]
         HELM[Helm Chart\nstreamingapp\nvalues-prod.yaml]
     end
 
     subgraph INFRA[AWS Infrastructure]
         VPC[VPC\n2 Public  2 Private Subnets\nNAT Gateway  IGW]
-        EKS[EKS Cluster v1.35\n3 x t3.small Spot  AL2023\npinned add-ons]
+        EKS[EKS Cluster v1.35\n4 x t3.small Spot  AL2023\npinned add-ons]
         ECR_I[ECR\n5 Repositories\nimmutable tags  10-image lifecycle]
         S3_I[S3 Bucket\nVideo storage\nIntelligent-Tiering]
         JENKINS_I[Jenkins EC2\nc7i-flex.large  IAM role]
     end
 
-    subgraph OBS[Observability Stack  -  planned Sprint 5]
+    subgraph OBS[Observability Stack  -  kube-prometheus-stack 92.3.1]
         direction LR
         PROM_I[Prometheus]
         GRAF_I[Grafana]
@@ -289,10 +298,12 @@ graph TB
     ANS -->|configures| JENKINS_I
     ANS -->|bootstraps add-ons| EKS
     HELM -->|deploys app to| EKS
-    HELM -.->|planned| OBS
+    ANS -->|installs| OBS
+    PROM_I -.->|scrapes| EKS
+    PROM_I -.->|scrapes| JENKINS_I
 
-    PROM_I -.-> GRAF_I
-    PROM_I -.-> ALERT_I
+    PROM_I --> GRAF_I
+    PROM_I --> ALERT_I
 
     classDef iac fill:#6f42c1,stroke:#4e2d8c,color:#fff,font-weight:bold
     classDef infra fill:#FF9900,stroke:#cc7a00,color:#000,font-weight:bold
@@ -313,7 +324,7 @@ graph TB
 | **Backend** | Node.js 18, Express, Mongoose, Socket.IO, Multer |
 | **Database** | MongoDB 6 (StatefulSet on EKS, encrypted gp3 volume) |
 | **Container Registry** | AWS ECR (5 repositories, immutable git-SHA tags) |
-| **Orchestration** | AWS EKS 1.35 (3 × t3.small Spot nodes, AL2023), HPA + metrics-server |
+| **Orchestration** | AWS EKS 1.35 (4 × t3.small Spot nodes, AL2023), HPA + metrics-server |
 | **Ingress** | AWS Application Load Balancer via the AWS Load Balancer Controller |
 | **CI/CD** | Jenkins on EC2 (c7i-flex.large, IAM role), 3 pipeline jobs, GitHub webhook |
 | **Testing** | Jest (4 backend services), React Testing Library (frontend) |
@@ -322,7 +333,7 @@ graph TB
 | **Packaging** | Helm 3 |
 | **Object Storage** | AWS S3 + CloudFront CDN (optional) |
 | **Secrets** | Kubernetes Secret built at deploy time from Jenkins credentials; no secrets in code |
-| **Monitoring** | Prometheus + Grafana + Alertmanager (planned, Sprint 5) |
+| **Monitoring** | kube-prometheus-stack: Prometheus, Alertmanager (→ Slack), Grafana, node-exporter, kube-state-metrics; `prom-client` app metrics; Jenkins Prometheus metrics plugin |
 | **Notifications** | Slack (#devops-alerts) — pipeline step present, credential not configured yet |
 
 ---
@@ -465,7 +476,7 @@ kubectl apply -f k8s/ingress-api.yaml -f k8s/ingress-frontend.yaml
 | `streaming-service` | 1 | 10 (prod) | 60% |
 | `chat-service` | 1 | 6 | 70% |
 
-`frontend` and `admin-service` run 1 fixed replica. Services start at 1 replica to fit three `t3.small` nodes (11 pods each, ~16 pod slots used by cluster add-ons); the HPAs scale them up under load. All pods have liveness/readiness probes (`/api/health`, frontend `/health`) and roll out with `maxUnavailable: 0`.
+`frontend` and `admin-service` run 1 fixed replica. Services start at 1 replica to fit four `t3.small` nodes (11 pods each; cluster add-ons and the monitoring stack take ~28 of the 44 pod slots); the HPAs scale them up under load. All pods have liveness/readiness probes (`/api/health`, frontend `/health`) and roll out with `maxUnavailable: 0`.
 
 ---
 
@@ -509,7 +520,7 @@ In CI the same steps run in the `streamingapp-infra` Jenkins job (plan → manua
 | File | Resources |
 |---|---|
 | `vpc.tf` | VPC `10.0.0.0/16`, 2 public + 2 private subnets, IGW, single NAT Gateway, ALB subnet tags |
-| `eks.tf` | EKS 1.35 cluster; managed node group (3 × t3.small Spot, AL2023); pinned add-ons (CoreDNS, kube-proxy, VPC CNI, EBS CSI); public API endpoint limited to `admin_cidr`, private endpoint for Jenkins; explicit cluster/KMS admins (admin IAM user + Jenkins role) |
+| `eks.tf` | EKS 1.35 cluster; managed node group (4 × t3.small Spot, AL2023); pinned add-ons (CoreDNS, kube-proxy, VPC CNI, EBS CSI); public API endpoint limited to `admin_cidr`, private endpoint for Jenkins; explicit cluster/KMS admins (admin IAM user + Jenkins role) |
 | `ec2.tf` | Jenkins EC2 (c7i-flex.large, pinned Ubuntu 22.04 AMI, 30 GB gp3), Elastic IP, key pair |
 | `ecr.tf` | 5 ECR repositories, **immutable** tags, scan on push, keep-last-10 lifecycle policy |
 | `s3.tf` | Video bucket with versioning, encryption, public access block, Intelligent-Tiering |
@@ -548,6 +559,7 @@ All versions are pinned in each role's `defaults/main.yml`.
 | `docker` | Docker CE, adds the `jenkins` user to the `docker` group |
 | `kubectl` | kubectl v1.35.0 (checksum-verified), Helm v3.16.4, AWS CLI v2, Terraform 1.15.7 |
 | `ci_tools` | Node.js 20 (unit tests), Ansible 10.7.0 with boto3/botocore/kubernetes |
+| `node_exporter` | Prometheus node_exporter 1.12.1 (checksum-verified) on :9100, scraped from EKS — Jenkins host CPU/memory/disk |
 | `jenkins` | Java 21, Jenkins LTS (package held so upgrades never restart it mid-pipeline) |
 
 ---
@@ -559,27 +571,31 @@ Three jobs, each defined in the repository:
 | Job | Type | Definition | Trigger |
 |---|---|---|---|
 | `streamingapp-infra` | Pipeline (parameter `ACTION`: plan / apply) | `jenkins/Jenkinsfile.infra` | Manual |
-| `streamingapp-ansible` | Pipeline (optional `APP_URL`) | `jenkins/Jenkinsfile.ansible` | Automatically after a successful infra apply, or manual |
-| `streamingapp-app` | Multibranch Pipeline | `Jenkinsfile` | GitHub webhook on push |
+| `streamingapp-ansible` | Pipeline (optional `APP_URL`, `TRIGGER_APP_DEPLOY`, `APP_BRANCH`) | `jenkins/Jenkinsfile.ansible` | Automatically after a successful infra apply, or manual |
+| `streamingapp-app` | Multibranch Pipeline | `Jenkinsfile` | GitHub webhook on push, or automatically after a successful Ansible run |
 
-**`streamingapp-app` stages** (every branch builds and pushes; deploy and smoke tests run on `Sprint-3`, `Develop` and `main`):
+Trigger chain: **code push → build → deploy → tests** (webhook) and **infra apply → configuration + monitoring → app deploy → tests** (job triggers).
+
+**`streamingapp-app` stages** (every branch builds and pushes; deploy and post-deploy tests run on `Sprint-3`, `Develop` and `main`):
 
 | Stage | Action |
 |---|---|
 | **1 — Checkout** | Clone the commit; resolve the git SHA (image tag) and AWS account ID at runtime |
 | **2 — Unit Tests** | `npm ci && npm test` for auth, streaming, admin, chat and frontend in parallel |
 | **3 — Docker Build & Push** | Build 5 images tagged with the git SHA and push to ECR; skip images already pushed for that SHA |
-| **4 — Deploy to EKS** | Apply MongoDB, `helm upgrade --install --atomic`, apply the Ingress |
-| **5 — Smoke Tests** | Health check every service from inside the cluster; wait for the ALB and check `/health` and the streaming API through it |
-| **Post** | Slack notification on success/failure (credential pending), Docker image prune, workspace cleanup |
+| **4 — Deploy to EKS** | Apply MongoDB, `helm upgrade --install --atomic` (incl. ServiceMonitors), apply the Ingress; on a new cluster set the CORS origin from the ALB and restart the pods |
+| **5 — Deployment Tests** | [`tests/deployment/verify-deployment.sh`](tests/deployment/verify-deployment.sh): rollouts, image tag = this commit, probes, HPAs, `/api/health` and `/metrics` of every backend from inside the cluster |
+| **6 — API Tests** | [`tests/api/api-tests.sh`](tests/api/api-tests.sh): through the ALB — register, login, JWT verify, admin/chat access control, video catalogue, SPA |
+| **7 — Monitoring Check** | [`tests/monitoring/verify-monitoring.sh --with-app`](tests/monitoring/verify-monitoring.sh): Prometheus scrapes the new pods, nodes and Jenkins; alert rules, Alertmanager and Grafana healthy |
+| **Post** | Slack notification on success/failure, Docker image prune, workspace cleanup |
 
-**`streamingapp-infra` stages:** Init & Validate (`terraform fmt -check`, `validate`) → Plan (archived as `tfplan.txt`) → Approve (manual) → Apply → trigger `streamingapp-ansible`.
+**`streamingapp-infra` stages:** Init & Validate (`terraform fmt -check`, `validate`) → Plan (archived as `tfplan.txt`) → Approve (manual) → Apply → trigger `streamingapp-ansible`. Slack message on failure.
 
-**`streamingapp-ansible` stages:** Read Terraform outputs (and the ALB URL) → Configure EC2 instances → Configure EKS cluster.
+**`streamingapp-ansible` stages:** Read Terraform outputs (and the ALB URL) → Test alert rules (promtool) → Configure EC2 instances → Configure EKS cluster (incl. monitoring stack) → Verify infrastructure → Verify monitoring → trigger `streamingapp-app/Sprint-3`. Slack message on failure.
 
 ### Jenkins Plugins
 
-Pipeline, Pipeline Utility Steps, Git, GitHub, GitHub Branch Source, Docker, Docker Pipeline, Kubernetes CLI, AWS Credentials, Pipeline: AWS Steps, Credentials Binding, SSH Agent, Timestamper, Workspace Cleanup, Slack Notification.
+Pipeline, Pipeline Utility Steps, Git, GitHub, GitHub Branch Source, Docker, Docker Pipeline, Kubernetes CLI, AWS Credentials, Pipeline: AWS Steps, Credentials Binding, SSH Agent, Timestamper, Workspace Cleanup, Slack Notification, Prometheus metrics.
 
 ### Jenkins Credentials Required
 
@@ -589,6 +605,9 @@ Pipeline, Pipeline Utility Steps, Git, GitHub, GitHub Branch Source, Docker, Doc
 | `streamingapp-ssh-key` | SSH username + private key | Ansible SSH to EC2 |
 | `jwt-secret` | Secret text | App secret created by `ansible/k8s-bootstrap.yml` |
 | `admin-cidr` | Secret text | `TF_VAR_admin_cidr` for the Terraform job (no default in code) |
+| `slack-bot-token` | Secret text | Slack Notification plugin (`slackSend` in all three pipelines) |
+| `slack-webhook-url` | Secret text | Alertmanager → Slack, stored as the `alertmanager-slack` Secret by Ansible |
+| `grafana-admin-password` | Secret text | Grafana `admin` login, stored as the `grafana-admin` Secret by Ansible |
 
 AWS access uses the Jenkins EC2 IAM role (`streamingapp-jenkins-role`); no AWS keys or account IDs are stored in Jenkins or in code. The account ID is resolved at runtime with `aws sts get-caller-identity`.
 
@@ -596,18 +615,56 @@ AWS access uses the Jenkins EC2 IAM role (`streamingapp-jenkins-role`); no AWS k
 
 ## Monitoring — Prometheus & Grafana
 
-> **Status: planned for Sprint 5 — not implemented yet.** The cluster currently runs metrics-server (CPU/memory for the HPAs and `kubectl top`).
+`kube-prometheus-stack` (chart **92.3.1**, pinned) runs in the `monitoring` namespace. [`ansible/k8s-bootstrap.yml`](ansible/k8s-bootstrap.yml) installs it with [`k8s/monitoring/kube-prometheus-stack-values.yaml`](k8s/monitoring/kube-prometheus-stack-values.yaml), applies the alert rules and loads the dashboards. Secrets (Grafana password, Slack webhook) come from Jenkins credentials.
 
-Planned design: deploy the `kube-prometheus-stack` Helm chart (Prometheus, Alertmanager, Grafana, kube-state-metrics, node-exporter) into a `monitoring` namespace, with application metrics, Grafana dashboards for application performance and resource health, Jenkins job metrics, and alerts routed to Slack.
+| What is monitored | How |
+|---|---|
+| Application (4 Node.js services) | `prom-client` at `GET /metrics` ([`util/metrics.js`](backend/authService/util/metrics.js)): request rate, 5xx, latency histogram per route, Node.js CPU/heap/event loop. Scraped through one ServiceMonitor per service ([`servicemonitor.yaml`](helm/streamingapp/templates/servicemonitor.yaml)). `/metrics` is not routed by the ALB |
+| Pods, deployments, HPAs | kube-state-metrics, cAdvisor (kubelet) |
+| EKS nodes | node-exporter DaemonSet |
+| Jenkins jobs | Jenkins **Prometheus metrics** plugin at `http://<jenkins-private-ip>:8080/prometheus/` |
+| Jenkins host | node_exporter (Ansible role) on `:9100` |
 
-### Planned Alert Rules
+Jenkins ports 8080/9100 are open to the EKS private subnets only ([`terraform/security.tf`](terraform/security.tf)). Grafana, Prometheus and Alertmanager get no load balancer (cost and exposure); open them with `kubectl port-forward` ([Runbook Phase 10](docs/RUNBOOK.md#phase-10--monitoring-and-alerting-sprint-5)).
+
+**Dashboards** (provisioned from [`k8s/monitoring/dashboards/`](k8s/monitoring/dashboards)): *StreamingApp - Application* (RED metrics per service, pod CPU/memory, HPA replicas, restarts, Node.js runtime, node resources) and *StreamingApp - Jenkins CI/CD* (last result and duration per job, executors and queue, Jenkins host CPU/memory/disk), plus the chart's built-in Kubernetes and node dashboards.
+
+### Alert rules
+
+[`k8s/monitoring/alert-rules.yaml`](k8s/monitoring/alert-rules.yaml), routed by Alertmanager to Slack `#devops-alerts` (firing and resolved). Unit-tested with `promtool` ([`tests/monitoring/alert-rules.test.yml`](tests/monitoring/alert-rules.test.yml)).
 
 | Alert | Condition | Severity |
 |---|---|---|
-| `ServiceDown` | Pod unreachable for 1 min | Critical |
-| `HighCPUUsage` | CPU > 80% for 5 min | Warning |
-| `HighMemoryUsage` | Memory > 85% of limit for 5 min | Warning |
-| `PodCrashLooping` | Restart rate > 0 for 2 min | Critical |
+| `AppServiceDown` | Deployment has 0 available pods for 1 min | Critical |
+| `MongoDBDown` | MongoDB StatefulSet not ready for 2 min | Critical |
+| `AppMetricsTargetDown` | A pod's `/metrics` not scrapeable for 2 min | Warning |
+| `AppHighErrorRate` | > 5% of a service's requests return 5xx for 5 min | Warning |
+| `AppHighLatency` | p95 latency > 1 s for 10 min | Warning |
+| `AppPodRestarting` | > 3 restarts in 15 min | Warning |
+| `HostHighCPU` / `HostHighMemory` | > 85% CPU / > 90% memory for 10 min (EKS nodes and Jenkins host) | Warning |
+| `HostDiskAlmostFull` | < 15% root disk free for 10 min | Critical |
+| `JenkinsDown` | Jenkins metrics endpoint unreachable for 2 min | Critical |
+| `JenkinsJobFailed` | Last build of a `streamingapp-*` job failed | Warning |
+| `JenkinsBuildQueueStuck` | > 3 queued builds for 15 min | Warning |
+
+The chart's default Kubernetes rules (crash loops, HPA maxed out, volumes filling up, …) stay enabled. Rules for components EKS manages (etcd, scheduler, controller-manager, kube-proxy) are switched off because they cannot be scraped.
+
+**Jenkins notifications:** every pipeline posts to Slack on failure (the app pipeline also on success). Failed deployments are rolled back by Helm `--atomic`, and the message says so.
+
+---
+
+## Testing
+
+| Level | What | Where | Runs in |
+|---|---|---|---|
+| Unit | Auth (JWT, health), streaming, admin auth, chat auth, frontend, metrics middleware (all 4 services) | `backend/*/__tests__/`, `frontend/src/App.test.js` | App pipeline *Unit Tests*, every branch |
+| Alert rules | `promtool check rules` + 5 unit tests (alerts fire / stay quiet as expected) | [`tests/monitoring/`](tests/monitoring) | Ansible pipeline *Test alert rules* |
+| Infrastructure integrity | EKS, add-ons, nodes, subnets/NAT, security groups, Jenkins role, S3 security, state backend, ECR settings, cluster bootstrap | [`tests/infra/verify-infra.sh`](tests/infra/verify-infra.sh) | Ansible pipeline *Verify infrastructure* |
+| Deployment success | Rollouts, image tag = commit SHA, probes, HPAs, in-cluster health and metrics, ServiceMonitors | [`tests/deployment/verify-deployment.sh`](tests/deployment/verify-deployment.sh) | App pipeline *Deployment Tests* |
+| Application functionality | Register/login/JWT, access control (401/403), catalogue via MongoDB, SPA — through the ALB | [`tests/api/api-tests.sh`](tests/api/api-tests.sh) | App pipeline *API Tests* |
+| Monitoring | Components up, all scrape targets up, rules loaded, Alertmanager → Slack, Grafana and dashboards | [`tests/monitoring/verify-monitoring.sh`](tests/monitoring/verify-monitoring.sh) | Both pipelines |
+
+How to run each one by hand: [`tests/README.md`](tests/README.md).
 
 ---
 
@@ -620,9 +677,9 @@ Planned design: deploy the `kube-prometheus-stack` Helm chart (Prometheus, Alert
 - **Role-aware access control** across frontend routes and all backend microservices.
 - **Horizontal Pod Autoscaling** on Auth, Streaming, and Chat services based on CPU utilisation.
 - **Zero-downtime deployments** via RollingUpdate strategy (`maxUnavailable: 0`), with automatic Helm rollback when health checks fail.
-- **Fully automated delivery**: a `git push` runs tests, builds and pushes images, deploys to EKS and smoke-tests the result.
+- **Fully automated delivery**: a `git push` runs tests, builds and pushes images, deploys to EKS and runs deployment, API and monitoring tests; an infrastructure apply chains configuration, monitoring and deployment automatically.
 - **Reproducible, pinned infrastructure**: Terraform, Ansible, add-on, chart and image versions are all pinned; no secrets, account IDs or open CIDRs in code.
-- **Observability** with Prometheus, Grafana and Slack alerting (planned, Sprint 5).
+- **Observability** with Prometheus, Grafana dashboards and Slack alerting for the app, the cluster and Jenkins.
 
 ---
 
@@ -701,11 +758,25 @@ Other hardening: Jenkins uses an **EC2 IAM role** (no AWS keys stored in Jenkins
 
 After verification and evidence capture, all AWS resources were deleted to stay within the Free plan credits: Terraform destroy (91 resources), the Kubernetes-created ALB and EBS volume, ECR images, S3 buckets, the Terraform state bucket and lock table, leftover EKS OIDC providers and the `streamingapp-admin` IAM user. The environment can be rebuilt from Phase 2 of the [Execution Runbook](docs/RUNBOOK.md).
 
-### Remaining (Sprints 5–6)
+---
 
-- [ ] Prometheus and Grafana dashboards, alerting rules
-- [ ] Jenkins notifications (Slack credential/channel not configured yet)
-- [ ] Final documentation and end-to-end test report
+## Sprint 5 and 6 Progress
+
+Implemented in code; execution steps and the screenshot checklist are in [Runbook Phases 10–11](docs/RUNBOOK.md#phase-10--monitoring-and-alerting-sprint-5).
+
+**Sprint 5 — Monitoring and alerting**
+- [x] Prometheus in EKS collecting application (`/metrics` on all 4 backends), pod, node and Jenkins metrics
+- [x] Grafana dashboards for application performance and resource health, and for Jenkins jobs, provisioned from code
+- [x] Jenkins integrated with Prometheus/Grafana (Prometheus metrics plugin + node_exporter on the Jenkins host)
+- [x] 12 alert rules for the application, hosts and Jenkins, routed by Alertmanager to Slack; Jenkins Slack notifications for failed deployments and jobs
+- [ ] Executed on AWS with evidence (Runbook Phase 10)
+
+**Sprint 6 — Testing, documentation, final automation**
+- [x] Test cases for application functionality, deployment success, infrastructure integrity and monitoring, wired into the pipelines ([Testing](#testing))
+- [x] Trigger chain automated end to end: push → build → deploy → test; infra apply → Ansible → app deploy → test
+- [x] Manual CORS re-run removed: the app pipeline sets the origin on a new cluster
+- [x] Runbook extended with monitoring, testing and troubleshooting
+- [ ] Final end-to-end run on AWS with evidence (Runbook Phase 11)
 
 ---
 
@@ -713,10 +784,10 @@ After verification and evidence capture, all AWS resources were deleted to stay 
 
 ```
 StreamingApp/
-├── Jenkinsfile                  # App CI/CD: test → build → ECR → EKS → smoke tests
+├── Jenkinsfile                  # App CI/CD: test → build → ECR → EKS → deployment/API/monitoring tests
 ├── jenkins/
 │   ├── Jenkinsfile.infra        # Terraform plan / approve / apply, then triggers Ansible
-│   └── Jenkinsfile.ansible      # EC2 configuration + EKS bootstrap
+│   └── Jenkinsfile.ansible      # Rule tests, EC2 configuration, EKS bootstrap + monitoring, verification
 ├── docker-compose.yml           # Local development stack
 ├── frontend/                    # React 18 + Nginx SPA (Dockerfile, nginx.conf)
 ├── backend/
@@ -729,12 +800,13 @@ StreamingApp/
 │   ├── storageclass.yaml        # Default encrypted gp3 StorageClass (EBS CSI)
 │   ├── mongo-statefulset.yaml
 │   ├── ingress-api.yaml         # ALB rules for /api/* and /socket.io
-│   └── ingress-frontend.yaml    # ALB catch-all rule for the SPA
+│   ├── ingress-frontend.yaml    # ALB catch-all rule for the SPA
+│   └── monitoring/              # kube-prometheus-stack values, alert rules, Grafana dashboards
 ├── helm/
 │   ├── streamingapp/            # Main Helm chart
 │   │   ├── Chart.yaml
 │   │   ├── values.yaml
-│   │   └── templates/           # deployment.yaml, service.yaml, hpa.yaml
+│   │   └── templates/           # deployment.yaml, service.yaml, hpa.yaml, servicemonitor.yaml
 │   └── values-prod.yaml         # Production overrides
 ├── terraform/                   # AWS infrastructure as code
 │   ├── provider.tf              # Pinned Terraform + S3/DynamoDB backend
@@ -750,7 +822,7 @@ StreamingApp/
 │   └── keys/                    # SSH public key for the Jenkins key pair
 ├── ansible/                     # Configuration management
 │   ├── site.yml                 # EC2 configuration
-│   ├── k8s-bootstrap.yml        # EKS add-ons, StorageClass, namespace, secret
+│   ├── k8s-bootstrap.yml        # EKS add-ons, StorageClass, namespace, secret, monitoring stack
 │   ├── ansible.cfg
 │   ├── inventory/aws_ec2.yml    # Dynamic inventory (laptop, public IPs)
 │   ├── inventory-jenkins/aws_ec2.yml  # Dynamic inventory (Jenkins, private IPs)
@@ -759,7 +831,9 @@ StreamingApp/
 │       ├── docker/
 │       ├── kubectl/
 │       ├── ci_tools/
+│       ├── node_exporter/
 │       └── jenkins/
+├── tests/                       # Sprint 6: infra, deployment, API and monitoring tests (see tests/README.md)
 └── docs/                        # Runbook, sprint progress reports, issues log
 ```
 

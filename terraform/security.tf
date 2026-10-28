@@ -35,6 +35,23 @@ resource "aws_security_group" "jenkins" {
     cidr_blocks = [var.vpc_cidr]
   }
 
+  # Sprint 5: Prometheus (pods in the private subnets) scrapes Jenkins; not reachable from the internet
+  ingress {
+    description = "Prometheus in EKS to Jenkins metrics (/prometheus/)"
+    from_port   = 8080
+    to_port     = 8080
+    protocol    = "tcp"
+    cidr_blocks = var.private_subnets
+  }
+
+  ingress {
+    description = "Prometheus in EKS to node_exporter on the Jenkins host"
+    from_port   = 9100
+    to_port     = 9100
+    protocol    = "tcp"
+    cidr_blocks = var.private_subnets
+  }
+
   # Outbound only (no inbound exposure): Jenkins must reach apt, ECR, GitHub, npm and Docker Hub
   egress {
     description = "Outbound internet access for package, image and source downloads"

@@ -1,5 +1,7 @@
 // Sprint 4: application CI/CD (Multibranch job: streamingapp-app)
-// Every branch: test + build + push to ECR. main/Develop/Sprint-3: also deploy to EKS + smoke test.
+// Every branch: test + build + push to ECR. main/Develop/Sprint-3: also deploy to EKS + post-deploy tests.
+// Sprint 5: Slack notifications; Sprint 6: deployment, API and monitoring tests (scripts in tests/).
+// Triggered by a GitHub push (webhook) or by streamingapp-ansible after configuration changes.
 // Infrastructure and configuration run in their own jobs: jenkins/Jenkinsfile.infra and jenkins/Jenkinsfile.ansible.
 // AWS access comes from the Jenkins EC2 IAM role (no static keys).
 pipeline {
@@ -87,36 +89,53 @@ pipeline {
             --atomic --wait --timeout 10m
 
           kubectl apply -f k8s/ingress-api.yaml -f k8s/ingress-frontend.yaml
+
+          # Brand-new cluster: Ansible wrote the secret before any ALB existed, so CORS has no allowed origin.
+          # Fill it in once the ALB has a hostname (the same value Ansible computes, so its next run
+          # reports no change) and restart the pods, which read the secret only at start-up.
+          if [ -z "$(kubectl get secret streamingapp-secrets -n $NAMESPACE -o jsonpath='{.data.CLIENT_URLS}')" ]; then
+            for i in $(seq 1 30); do
+              ALB=$(kubectl get ingress streamingapp-ingress-frontend -n $NAMESPACE -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+              [ -n "$ALB" ] && break
+              echo "Waiting for ALB hostname to set CORS ($i/30)..."; sleep 10
+            done
+            if [ -n "$ALB" ]; then
+              APP_URL_B64=$(printf 'http://%s' "$ALB" | base64 -w0)
+              kubectl patch secret streamingapp-secrets -n $NAMESPACE --type merge \
+                -p "{\"data\":{\"CLIENT_URLS\":\"$APP_URL_B64\",\"STREAMING_PUBLIC_URL\":\"$APP_URL_B64\"}}"
+              kubectl rollout restart deployment -n $NAMESPACE -l chart
+              for d in $(kubectl get deploy -n $NAMESPACE -l chart -o name); do
+                kubectl rollout status "$d" -n $NAMESPACE --timeout=5m
+              done
+              echo "CORS origin set to http://$ALB"
+            fi
+          fi
           kubectl get pods,svc,hpa,ingress -n $NAMESPACE
         '''
       }
     }
-    // -- Stage 5: Smoke Tests --------------------------------------
-    stage('Smoke Tests') {
+    // -- Stage 5: Deployment Tests (Sprint 6) -------------------
+    // Rollout, image tags = this commit, probes, HPAs, in-cluster health + /metrics, ServiceMonitors
+    stage('Deployment Tests') {
       when { anyOf { branch 'main'; branch 'Develop'; branch 'Sprint-3' } }
       steps {
-        sh '''
-          # In-cluster: every backend answers its health check (frontend image has busybox wget)
-          for svc in auth-service:3001 streaming-service:3002 admin-service:3003 chat-service:3004; do
-            NAME=${svc%%:*}; PORT=${svc##*:}
-            kubectl exec -n $NAMESPACE deploy/frontend -- wget -qO- -T 5 http://$NAME:$PORT/api/health > /dev/null \
-              || { echo "FAIL: $NAME"; exit 1; }
-            echo "OK: $NAME"
-          done
-
-          # External: through the ALB, end to end (frontend, then streaming API + MongoDB)
-          # A new ALB takes a few minutes to get its hostname and pass health checks
-          for i in $(seq 1 30); do
-            ALB=$(kubectl get ingress streamingapp-ingress-frontend -n $NAMESPACE -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-            [ -n "$ALB" ] && break
-            echo "Waiting for ALB hostname ($i/30)..."; sleep 10
-          done
-          [ -n "$ALB" ] || { echo "FAIL: Ingress has no ALB hostname after 5 minutes"; exit 1; }
-          echo "App URL: http://$ALB"
-          curl -fsS --retry 30 --retry-delay 10 --retry-all-errors -o /dev/null http://$ALB/health
-          curl -fsS --retry 30 --retry-delay 10 --retry-all-errors -o /dev/null http://$ALB/api/streaming/videos/featured
-          echo "All smoke tests passed"
-        '''
+        sh 'bash tests/deployment/verify-deployment.sh'
+      }
+    }
+    // -- Stage 6: API Tests (Sprint 6) --------------------------
+    // Through the public ALB: register/login/JWT, access control, video catalogue (MongoDB), SPA
+    stage('API Tests') {
+      when { anyOf { branch 'main'; branch 'Develop'; branch 'Sprint-3' } }
+      steps {
+        sh 'bash tests/api/api-tests.sh'
+      }
+    }
+    // -- Stage 7: Monitoring Check (Sprints 5-6) ----------------
+    // Prometheus scrapes the new pods, nodes and Jenkins; alert rules, Alertmanager and Grafana up
+    stage('Monitoring Check') {
+      when { anyOf { branch 'main'; branch 'Develop'; branch 'Sprint-3' } }
+      steps {
+        sh 'bash tests/monitoring/verify-monitoring.sh --with-app'
       }
     }
   }
@@ -127,7 +146,7 @@ pipeline {
     }
     failure {
       slackSend channel: env.SLACK_CHANNEL, color: 'danger',
-        message: ":x: Build #${BUILD_NUMBER} on ${BRANCH_NAME} FAILED. Check: ${BUILD_URL}"
+        message: ":x: Build #${BUILD_NUMBER} on ${BRANCH_NAME} FAILED (if Deploy failed, Helm --atomic rolled back to the previous release). Check: ${BUILD_URL}"
     }
     always {
       sh 'docker image prune -af --filter "until=24h" || true'

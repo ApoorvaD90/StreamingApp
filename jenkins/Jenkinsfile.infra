@@ -67,6 +67,10 @@ pipeline {
         }
       }
     }
+    failure {
+      slackSend channel: '#devops-alerts', color: 'danger',
+        message: ":x: ${env.JOB_NAME} #${env.BUILD_NUMBER} (${params.ACTION}) FAILED. Check: ${env.BUILD_URL}"
+    }
     always {
       cleanWs()
     }

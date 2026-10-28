@@ -1,0 +1,51 @@
+---
+# Sprint 5: host metrics (CPU, memory, disk) of the Jenkins server for Prometheus in EKS.
+# Port 9100 is reachable only from inside the VPC (terraform/security.tf).
+- name: Create node_exporter system user
+  user:
+    name: node_exporter
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Download node_exporter {{ node_exporter_version }}
+  get_url:
+    url: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
+    dest: "/tmp/node_exporter-{{ node_exporter_version }}.tar.gz"
+    checksum: "sha256:https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/sha256sums.txt"
+    mode: '0644'
+
+- name: Install node_exporter binary
+  unarchive:
+    src: "/tmp/node_exporter-{{ node_exporter_version }}.tar.gz"
+    dest: /usr/local/bin/
+    remote_src: yes
+    include: ["node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter"]
+    extra_opts: [--strip-components=1]
+    mode: '0755'
+  notify: restart node_exporter
+
+- name: Install node_exporter systemd unit
+  copy:
+    dest: /etc/systemd/system/node_exporter.service
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=Prometheus node_exporter
+      After=network-online.target
+
+      [Service]
+      User=node_exporter
+      ExecStart=/usr/local/bin/node_exporter --web.listen-address=:{{ node_exporter_port }}
+      Restart=on-failure
+
+      [Install]
+      WantedBy=multi-user.target
+  notify: restart node_exporter
+
+- name: Enable and start node_exporter
+  systemd:
+    name: node_exporter
+    enabled: true
+    state: started
+    daemon_reload: true

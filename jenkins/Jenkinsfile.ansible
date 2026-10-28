@@ -1,10 +1,16 @@
 // Sprint 3: configuration management (job: streamingapp-ansible)
+// Sprint 5: also installs the monitoring stack (Prometheus, Alertmanager, Grafana) on EKS.
+// Sprint 6: tests the alert rules first, verifies infrastructure + monitoring afterwards,
+//           then triggers the app pipeline: infra -> ansible -> app runs as one chain.
 // Triggered automatically by streamingapp-infra after a successful apply; can also be run manually.
 pipeline {
   agent any
   parameters {
     string(name: 'APP_URL', defaultValue: '',
            description: 'Public app URL for CORS, e.g. http://<ALB DNS>. Leave empty to auto-detect from the Ingress.')
+    booleanParam(name: 'TRIGGER_APP_DEPLOY', defaultValue: true,
+                 description: 'Start the app pipeline (streamingapp-app/APP_BRANCH) after a successful run.')
+    string(name: 'APP_BRANCH', defaultValue: 'Sprint-3', description: 'Branch of streamingapp-app to deploy.')
   }
   environment {
     AWS_DEFAULT_REGION        = 'us-east-1'
@@ -26,6 +32,7 @@ pipeline {
             env.VPC_ID      = sh(script: 'terraform output -raw vpc_id', returnStdout: true).trim()
             env.LB_ROLE_ARN = sh(script: 'terraform output -raw lb_controller_role_arn', returnStdout: true).trim()
             env.S3_BUCKET   = sh(script: 'terraform output -raw s3_bucket_name', returnStdout: true).trim()
+            env.JENKINS_PRIVATE_IP = sh(script: 'terraform output -raw jenkins_private_ip', returnStdout: true).trim()
           }
         }
         script {
@@ -45,6 +52,12 @@ pipeline {
         }
       }
     }
+    // Sprint 6: a broken alert rule fails here, before anything is changed on the cluster
+    stage('Test alert rules') {
+      steps {
+        sh 'bash tests/monitoring/run-rule-tests.sh'
+      }
+    }
     stage('Configure EC2 instances') {
       steps {
         dir('ansible') {
@@ -58,14 +71,41 @@ pipeline {
     stage('Configure EKS cluster') {
       steps {
         dir('ansible') {
-          withCredentials([string(credentialsId: 'jwt-secret', variable: 'JWT_SECRET')]) {
+          withCredentials([
+            string(credentialsId: 'jwt-secret', variable: 'JWT_SECRET'),
+            string(credentialsId: 'grafana-admin-password', variable: 'GRAFANA_ADMIN_PASSWORD'),
+            string(credentialsId: 'slack-webhook-url', variable: 'SLACK_WEBHOOK_URL'),
+          ]) {
             sh 'ansible-playbook -i localhost, k8s-bootstrap.yml'
           }
         }
       }
     }
+    // Sprint 6: infrastructure integrity and monitoring checks against the live environment
+    stage('Verify infrastructure') {
+      steps {
+        sh 'bash tests/infra/verify-infra.sh'
+      }
+    }
+    stage('Verify monitoring') {
+      steps {
+        sh 'bash tests/monitoring/verify-monitoring.sh'
+      }
+    }
   }
   post {
+    success {
+      script {
+        // Sprint 6: configuration done -> deploy the application (the app pipeline never triggers this job, so no loop)
+        if (params.TRIGGER_APP_DEPLOY) {
+          build job: "streamingapp-app/${params.APP_BRANCH}", wait: false
+        }
+      }
+    }
+    failure {
+      slackSend channel: '#devops-alerts', color: 'danger',
+        message: ":x: ${env.JOB_NAME} #${env.BUILD_NUMBER} FAILED (configuration/monitoring). Check: ${env.BUILD_URL}"
+    }
     always {
       cleanWs()
     }

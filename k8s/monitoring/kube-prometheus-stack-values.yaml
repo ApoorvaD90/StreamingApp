@@ -1,0 +1,117 @@
+# Sprint 5: Prometheus, Alertmanager, Grafana, node-exporter and kube-state-metrics
+# (kube-prometheus-stack, chart version pinned in ansible/k8s-bootstrap.yml).
+# Installed by ansible/k8s-bootstrap.yml, which adds the run-time values that are not in code:
+# the Jenkins scrape targets (private IP from Terraform). Secrets come from Kubernetes Secrets
+# that the same playbook creates from Jenkins credentials (grafana-admin, alertmanager-slack).
+#
+# Sized for 4 x t3.small Spot nodes: small requests, short retention, no extra load balancer
+# (Grafana, Prometheus and Alertmanager are reached with kubectl port-forward).
+
+# EKS manages the control plane: its scheduler, controller-manager and etcd cannot be scraped,
+# and kube-proxy only listens on 127.0.0.1. Leaving them on would raise permanent "down" alerts.
+kubeControllerManager: { enabled: false }
+kubeScheduler: { enabled: false }
+kubeEtcd: { enabled: false }
+kubeProxy: { enabled: false }
+windowsMonitoring: { enabled: false }
+
+defaultRules:
+  rules:
+    etcd: false
+    kubeControllerManager: false
+    kubeSchedulerAlerting: false
+    kubeSchedulerRecording: false
+    kubeProxy: false
+    windows: false
+
+prometheus:
+  prometheusSpec:
+    scrapeInterval: 30s
+    evaluationInterval: 30s
+    retention: 3d
+    retentionSize: 4GB
+    # Pick up every ServiceMonitor / PrometheusRule in the cluster, not only ones labelled for this
+    # Helm release: the app chart's ServiceMonitors and k8s/monitoring/alert-rules.yaml rely on it
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    probeSelectorNilUsesHelmValues: false
+    scrapeConfigSelectorNilUsesHelmValues: false
+    resources:
+      requests: { cpu: 100m, memory: 400Mi }
+      limits: { cpu: 500m, memory: 900Mi }
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp3
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 5Gi
+
+alertmanager:
+  alertmanagerSpec:
+    # Mounted at /etc/alertmanager/secrets/alertmanager-slack/ (created by Ansible from the
+    # Jenkins credential slack-webhook-url), so the webhook URL never appears in code or values
+    secrets: [alertmanager-slack]
+    resources:
+      requests: { cpu: 10m, memory: 32Mi }
+      limits: { cpu: 100m, memory: 128Mi }
+  config:
+    global:
+      resolve_timeout: 5m
+    route:
+      receiver: slack
+      group_by: [alertname, namespace]
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      routes:
+        # Watchdog always fires (proves the alert pipeline works); InfoInhibitor only suppresses info alerts
+        - receiver: "null"
+          matchers: ['alertname =~ "Watchdog|InfoInhibitor"']
+    inhibit_rules:
+      - source_matchers: ['severity = "critical"']
+        target_matchers: ['severity = "warning"']
+        equal: [alertname, namespace]
+    receivers:
+      - name: "null"
+      - name: slack
+        slack_configs:
+          - api_url_file: /etc/alertmanager/secrets/alertmanager-slack/webhook-url
+            channel: "#devops-alerts"
+            send_resolved: true
+            title: '{{ if eq .Status "firing" }}:rotating_light: FIRING{{ else }}:white_check_mark: RESOLVED{{ end }}: {{ .CommonLabels.alertname }} ({{ .CommonLabels.severity }})'
+            text: |-
+              {{ range .Alerts }}*{{ .Annotations.summary }}*
+              {{ .Annotations.description }}
+              {{ end }}
+
+grafana:
+  # admin-user / admin-password come from the grafana-admin Secret (Jenkins credential grafana-admin-password)
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  defaultDashboardsTimezone: browser
+  # Dashboards are provisioned from code (ConfigMaps with label grafana_dashboard=1), so no volume needed
+  persistence:
+    enabled: false
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { cpu: 300m, memory: 256Mi }
+
+prometheusOperator:
+  resources:
+    requests: { cpu: 20m, memory: 64Mi }
+    limits: { cpu: 200m, memory: 192Mi }
+
+kube-state-metrics:
+  resources:
+    requests: { cpu: 10m, memory: 48Mi }
+    limits: { cpu: 100m, memory: 128Mi }
+
+prometheus-node-exporter:
+  resources:
+    requests: { cpu: 10m, memory: 24Mi }
+    limits: { cpu: 100m, memory: 64Mi }

@@ -6,6 +6,11 @@ global:
   namespace: streamingapp
   secretName: streamingapp-secrets
 
+# Sprint 5: one ServiceMonitor per service with metrics: true (GET /metrics, prom-client)
+monitoring:
+  enabled: true
+  scrapeInterval: 30s
+
 # MongoDB (k8s/mongo-statefulset.yaml) and the ALB Ingress (k8s/ingress-*.yaml)
 # are applied by the Jenkins Deploy stage, not by this chart.
 services:
@@ -23,6 +28,7 @@ services:
 
   auth-service:
     enabled: true
+    metrics: true
     replicaCount: 1
     image:
       name: streamingapp/auth-service
@@ -38,6 +44,7 @@ services:
 
   streaming-service:
     enabled: true
+    metrics: true
     replicaCount: 1
     image:
       name: streamingapp/streaming-service
@@ -53,6 +60,7 @@ services:
 
   admin-service:
     enabled: true
+    metrics: true
     replicaCount: 1
     image:
       name: streamingapp/admin-service
@@ -64,6 +72,7 @@ services:
 
   chat-service:
     enabled: true
+    metrics: true
     replicaCount: 1
     image:
       name: streamingapp/chat-service

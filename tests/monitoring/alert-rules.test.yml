@@ -1,0 +1,95 @@
+# Sprint 6: unit tests for k8s/monitoring/alert-rules.yaml (promtool test rules).
+# Run by the Validate stage of jenkins/Jenkinsfile.ansible; locally see tests/README.md.
+# rules.yml is the PrometheusRule's spec, extracted by tests/monitoring/run-rule-tests.sh.
+rule_files:
+  - rules.yml
+
+evaluation_interval: 30s
+
+tests:
+  - name: A deployment with no available pods raises AppServiceDown after 1 minute
+    interval: 30s
+    input_series:
+      - series: 'kube_deployment_status_replicas_available{namespace="streamingapp", deployment="auth-service"}'
+        values: "1 1 0 0 0 0 0"
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: AppServiceDown
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: AppServiceDown
+        exp_alerts:
+          - exp_labels: { severity: critical, namespace: streamingapp, deployment: auth-service }
+            exp_annotations:
+              summary: "auth-service has no available pods"
+              description: "Deployment auth-service in namespace streamingapp has had 0 available replicas for 1 minute."
+
+  - name: More than 5% server errors raises AppHighErrorRate, healthy traffic does not
+    interval: 1m
+    input_series:
+      # 100 requests/min in total, 10 of them 5xx (10%) on streaming-service
+      - series: 'http_request_duration_seconds_count{namespace="streamingapp", job="streaming-service", status_code="200"}'
+        values: "0+90x15"
+      - series: 'http_request_duration_seconds_count{namespace="streamingapp", job="streaming-service", status_code="500"}'
+        values: "0+10x15"
+      # auth-service: only successful requests
+      - series: 'http_request_duration_seconds_count{namespace="streamingapp", job="auth-service", status_code="200"}'
+        values: "0+100x15"
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: AppHighErrorRate
+        exp_alerts:
+          - exp_labels: { severity: warning, job: streaming-service }
+            exp_annotations:
+              summary: "streaming-service: more than 5% of requests fail"
+              description: "10% of streaming-service requests returned 5xx over the last 5 minutes."
+
+  - name: A failed Jenkins build raises JenkinsJobFailed until the next successful build
+    interval: 1m
+    input_series:
+      - series: 'default_jenkins_builds_last_build_result_ordinal{jenkins_job="streamingapp-app/Sprint-3"}'
+        values: "0 0 2 2 0"
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: JenkinsJobFailed
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: JenkinsJobFailed
+        exp_alerts:
+          - exp_labels: { severity: warning, jenkins_job: "streamingapp-app/Sprint-3" }
+            exp_annotations:
+              summary: "Jenkins job streamingapp-app/Sprint-3 failed"
+              description: "The last build of streamingapp-app/Sprint-3 failed. Open Jenkins for the console output."
+      - eval_time: 4m
+        alertname: JenkinsJobFailed
+        exp_alerts: []
+
+  - name: Jenkins unreachable for 2 minutes raises JenkinsDown
+    interval: 1m
+    input_series:
+      - series: 'up{job="jenkins", instance="jenkins"}'
+        values: "1 0 0 0 0"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: JenkinsDown
+        exp_alerts:
+          - exp_labels: { severity: critical, job: jenkins, instance: jenkins }
+            exp_annotations:
+              summary: "Jenkins is unreachable"
+              description: "Prometheus cannot scrape http://<jenkins-private-ip>:8080/prometheus/ (service stopped or instance down)."
+
+  - name: Root disk below 15% free raises HostDiskAlmostFull
+    interval: 1m
+    input_series:
+      - series: 'node_filesystem_avail_bytes{job="jenkins-node", instance="jenkins", mountpoint="/", fstype="ext4"}'
+        values: "3e9x15"
+      - series: 'node_filesystem_size_bytes{job="jenkins-node", instance="jenkins", mountpoint="/", fstype="ext4"}'
+        values: "30e9x15"
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: HostDiskAlmostFull
+        exp_alerts:
+          - exp_labels: { severity: critical, job: jenkins-node, instance: jenkins, mountpoint: "/", fstype: ext4 }
+            exp_annotations:
+              summary: "Root disk almost full on jenkins"
+              description: "Only 10% free. On Jenkins: docker image prune -af; on a node: check image garbage collection."

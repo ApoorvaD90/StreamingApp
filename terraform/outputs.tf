@@ -28,6 +28,11 @@ output "jenkins_public_ip" {
   value       = aws_eip.jenkins.public_ip
 }
 
+output "jenkins_private_ip" {
+  description = "Private IP of the Jenkins EC2 instance, scraped by Prometheus inside the VPC."
+  value       = aws_instance.jenkins.private_ip
+}
+
 output "jenkins_role_arn" {
   description = "IAM role attached to the Jenkins EC2 instance."
   value       = aws_iam_role.jenkins.arn

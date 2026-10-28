@@ -7,6 +7,7 @@
     - docker
     - kubectl
     - ci_tools
+    - node_exporter # Sprint 5: Jenkins host metrics for Prometheus
     # Tagged so the Jenkins-run pipeline can skip it (--skip-tags jenkins):
     # Jenkins must never reinstall/restart itself from inside its own job
     - role: jenkins

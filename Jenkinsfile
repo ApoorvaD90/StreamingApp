@@ -101,8 +101,9 @@ pipeline {
             done
             if [ -n "$ALB" ]; then
               APP_URL_B64=$(printf 'http://%s' "$ALB" | base64 -w0)
-              kubectl patch secret streamingapp-secrets -n $NAMESPACE --type merge \
-                -p "{\"data\":{\"CLIENT_URLS\":\"$APP_URL_B64\",\"STREAMING_PUBLIC_URL\":\"$APP_URL_B64\"}}"
+              # JSON built with printf in single quotes: escaped double quotes are unescaped by Groovy first
+              PATCH=$(printf '{"data":{"CLIENT_URLS":"%s","STREAMING_PUBLIC_URL":"%s"}}' "$APP_URL_B64" "$APP_URL_B64")
+              kubectl patch secret streamingapp-secrets -n $NAMESPACE --type merge -p "$PATCH"
               kubectl rollout restart deployment -n $NAMESPACE -l chart
               for d in $(kubectl get deploy -n $NAMESPACE -l chart -o name); do
                 kubectl rollout status "$d" -n $NAMESPACE --timeout=5m

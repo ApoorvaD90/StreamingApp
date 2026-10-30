@@ -791,6 +791,7 @@ Every error below was hit during a real run; the fix is either already in the co
 | Deploy: `timed out waiting for the condition`; `mongo-0` Pending, PVC "no storage class is set" | EKS 1.30+ has no default StorageClass — fixed: gp3 default created by the Ansible bootstrap (run 7.1/7.2 before 7.3) |
 | Deploy: `release ... failed ... atomic ... context deadline exceeded`; events `Too many pods`, `Insufficient memory` | Nodes full — fixed: 3 × t3.small, services start at 1 replica. Check `kubectl get events -n streamingapp` |
 | `global.imageTag must be a pinned version` | Guard working as intended — Helm was run without `--set global.imageTag=<sha>` |
+| Deploy: `kubectl patch secret ... error decoding patch: invalid character 'd' looking for beginning of object key string` | Groovy's `'''` string removed the escaped quotes from the JSON — fixed: the Jenkinsfile builds the patch with `printf` in single quotes |
 | CORS error / login fails in the browser | Run 7.4 (Ansible with `APP_URL` empty) — it sets `CLIENT_URLS` from the Ingress and restarts the pods |
 | Ansible re-run shows `ok` / `skipping` for the secret tasks | Correct — the secret already had the right values |
 | Deploy/Smoke stages skipped | Branch is not `Sprint-3`/`Develop`/`main` — other branches only test and build |

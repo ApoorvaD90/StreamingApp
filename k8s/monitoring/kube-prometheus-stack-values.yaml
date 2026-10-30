@@ -97,9 +97,11 @@ grafana:
   # Dashboards are provisioned from code (ConfigMaps with label grafana_dashboard=1), so no volume needed
   persistence:
     enabled: false
+  # Grafana 13 idles at ~250Mi: a 256Mi limit left it stuck in garbage collection, failing its probes
+  # ("Unable to find application file" in the browser). Request = real usage so it lands on a node with room.
   resources:
-    requests: { cpu: 50m, memory: 128Mi }
-    limits: { cpu: 300m, memory: 256Mi }
+    requests: { cpu: 50m, memory: 300Mi }
+    limits: { cpu: 500m, memory: 512Mi }
 
 prometheusOperator:
   resources:

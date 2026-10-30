@@ -30,6 +30,36 @@ module "eks" {
     }
   }
 
+  # Sprint 5/6: the monitoring tests reach Prometheus, Alertmanager and Grafana through the API server's
+  # service proxy (kubectl get --raw .../services/<svc>/proxy). The control plane may only reach the
+  # pods' own ports when the node security group allows it; by default it allows webhook ports only.
+  node_security_group_additional_rules = {
+    api_to_prometheus = {
+      description                   = "Cluster API to Prometheus (service proxy)"
+      type                          = "ingress"
+      protocol                      = "tcp"
+      from_port                     = 9090
+      to_port                       = 9090
+      source_cluster_security_group = true
+    }
+    api_to_alertmanager = {
+      description                   = "Cluster API to Alertmanager (service proxy)"
+      type                          = "ingress"
+      protocol                      = "tcp"
+      from_port                     = 9093
+      to_port                       = 9093
+      source_cluster_security_group = true
+    }
+    api_to_grafana = {
+      description                   = "Cluster API to Grafana (service proxy)"
+      type                          = "ingress"
+      protocol                      = "tcp"
+      from_port                     = 3000
+      to_port                       = 3000
+      source_cluster_security_group = true
+    }
+  }
+
   eks_managed_node_groups = {
     default = {
       name           = "streamingapp-ng"

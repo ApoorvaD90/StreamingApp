@@ -130,5 +130,6 @@ variable "ssh_public_key_path" {
 variable "github_webhook_cidrs" {
   type        = list(string)
   description = "GitHub webhook source IP ranges (from https://api.github.com/meta -> hooks), allowed to reach Jenkins on 8080."
-  default     = ["192.30.252.0/22", "185.199.108.0/22", "140.82.112.0/20", "143.55.64.0/20"]
+  # Re-check when deliveries fail with "failed to connect to host": (Invoke-RestMethod https://api.github.com/meta).hooks
+  default = ["192.30.252.0/22", "185.199.108.0/22", "140.82.112.0/20", "143.55.64.0/20", "9.234.106.48/28", "9.234.98.160/28", "9.234.98.176/28"]
 }

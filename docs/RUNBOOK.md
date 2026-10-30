@@ -23,6 +23,11 @@ End-to-end steps to build, provision, configure and deploy StreamingApp on AWS E
 
 > **Free plan budget.** EKS, the NAT gateway and the ALB are not free: about **$7.20/day fully running, ~$4.35/day paused** (the 4th Spot node and Prometheus' 5 GiB volume add ~$0.25/day). Check remaining credits with `aws freetier get-account-plan-state --query accountPlanRemainingCredits.amount`. The plan expires **13 Nov 2026** — finish and tear down before then.
 
+**Resuming after a laptop restart** (do this before continuing at any phase after 4):
+1. New PowerShell window → `kubectl version --client` ✅ Docker Desktop's kubectl (profile loaded). Start Docker Desktop if a later step uses it.
+2. Home IP changed? `(Invoke-RestMethod https://checkip.amazonaws.com).Trim()` vs `aws eks describe-cluster --name streamingapp-cluster --query cluster.resourcesVpcConfig.publicAccessCidrs`. If they differ, Jenkins (`:8080`), SSH and `kubectl` all time out although everything is running → set `$env:TF_VAR_admin_cidr = "<new-ip>/32"`, then in `terraform/`: `terraform plan "-out=ip.tfplan"` (✅ only in-place updates: Jenkins SG, EKS public CIDRs, OIDC thumbprint "known after apply"; 0 to destroy) → `terraform apply ip.tfplan`. Update the Jenkins `admin-cidr` credential to the same value if it already exists.
+3. `kubectl get nodes` ✅ 4 Ready; `http://<JENKINS_EIP>:8080` ✅ login page.
+
 **Delivery branch:** the jobs and the Jenkinsfile deploy condition use **`Sprint-3`**. If the code is merged into `Develop` or `main` later, use that branch name in Steps 6.4–6.6 and 7.3 (deploy already runs on `main`, `Develop` and `Sprint-3`).
 
 ## Sprint coverage
@@ -370,7 +375,7 @@ After the restart, check the metrics endpoint from the laptop (PowerShell; leave
 **6.1b Slack app** (Sprint 5 — one app gives both the Jenkins bot token and the Alertmanager webhook)
 
 1. No Slack workspace yet? https://slack.com/get-started → *Create a new workspace* (free). Create a channel **`#devops-alerts`**.
-2. https://api.slack.com/apps → **Create New App** → *From scratch* → name `StreamingApp Alerts`, pick the workspace → Create App.
+2. https://api.slack.com/apps → **Create New App** → *Blank app* (older UI: *From scratch*) → Continue → name `StreamingApp Alerts`, pick the workspace → Create App.
 3. Left menu **Incoming Webhooks** → switch **On** → **Add New Webhook to Workspace** → channel `#devops-alerts` → Allow → copy the **Webhook URL** (`https://hooks.slack.com/services/...`) → credential `slack-webhook-url` in 6.3.
 4. Left menu **OAuth & Permissions** → *Bot Token Scopes* → **Add an OAuth Scope** → `chat:write` → scroll up → **Reinstall to Workspace** → Allow → copy the **Bot User OAuth Token** (`xoxb-...`) → credential `slack-bot-token` in 6.3.
 5. In Slack, in `#devops-alerts`, type `/invite @StreamingApp Alerts`.
@@ -788,7 +793,7 @@ Every error below was hit during a real run; the fix is either already in the co
 | CORS error / login fails in the browser | Run 7.4 (Ansible with `APP_URL` empty) — it sets `CLIENT_URLS` from the Ingress and restarts the pods |
 | Ansible re-run shows `ok` / `skipping` for the secret tasks | Correct — the secret already had the right values |
 | Deploy/Smoke stages skipped | Branch is not `Sprint-3`/`Develop`/`main` — other branches only test and build |
-| Webhook delivery times out | Jenkins SG lacks the GitHub ranges (Phase 4 not applied) or Jenkins is stopped |
+| Webhook delivery times out / `failed to connect to host` | Jenkins SG lacks the GitHub ranges (Phase 4 not applied), GitHub added new ranges — compare `(Invoke-RestMethod https://api.github.com/meta).hooks` with `github_webhook_cidrs` in `variables.tf` (the `9.234.x.x/28` ranges were added this way), apply, push — or Jenkins is stopped |
 | Destroy: `ECR Repository ... not empty` | Force-delete the repos (9.2), then `terraform destroy` again |
 
 ## Cost control

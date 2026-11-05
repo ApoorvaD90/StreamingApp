@@ -98,8 +98,9 @@ graph LR
     A & B & C -.->|failure / success| S([Slack])
 ```
 
-> 📸 **Screenshot:** the application home page opened through the ALB URL
-<!-- ![App running on EKS](docs/screenshots/app-home.png) -->
+**The application live on EKS, opened through the ALB URL:**
+
+![App running on EKS](docs/screenshots/app-home.png)
 
 ---
 
@@ -122,14 +123,27 @@ graph LR
 | chat-service | 3004 | Node.js / Socket.IO |
 | MongoDB | 27017 | mongo:6 |
 
-> 📸 **Screenshot:** `docker compose ps` with all containers running locally
-<!-- ![Local Docker stack](docs/screenshots/s1-docker-compose.png) -->
+**All six containers running locally (`docker compose ps`):**
 
-> 📸 **Screenshot:** Jenkins dashboard on the EC2 instance
-<!-- ![Jenkins dashboard](docs/screenshots/s1-jenkins-dashboard.png) -->
+![Local Docker stack](docs/screenshots/s1-docker-compose.png)
 
-> 📸 **Screenshot:** GitHub webhook with a successful (green) delivery
-<!-- ![GitHub webhook](docs/screenshots/s1-github-webhook.png) -->
+**The three Jenkins jobs on the EC2 server:**
+
+`streamingapp-infra`: Terraform job, successful build
+
+![Jenkins infra job](docs/screenshots/s1-jenkins-infra-job.png)
+
+`streamingapp-ansible`: started automatically by the upstream `streamingapp-infra` build
+
+![Jenkins ansible job](docs/screenshots/s1-jenkins-ansible-job.png)
+
+`streamingapp-app` (Multibranch, `Sprint-3` branch): started by a GitHub push event
+
+![Jenkins app job](docs/screenshots/s1-jenkins-app-job.png)
+
+**GitHub webhook to Jenkins (push events), last delivery successful:**
+
+![GitHub webhook](docs/screenshots/s1-github-webhook.png)
 
 ---
 
@@ -152,11 +166,15 @@ graph LR
 **Jenkins job `streamingapp-infra`** ([`jenkins/Jenkinsfile.infra`](jenkins/Jenkinsfile.infra)), a parameterised pipeline with `ACTION = plan | apply`:
 Init & Validate → Plan (archived as `tfplan.txt`) → **manual Approve** → Apply. A successful apply triggers the Ansible job.
 
-> 📸 **Screenshot:** `terraform apply` output (`Apply complete!`)
-<!-- ![Terraform apply](docs/screenshots/s2-terraform-apply.png) -->
+**First `terraform apply` from the laptop: `91 added, 0 changed, 0 destroyed`, with the outputs (ECR repository URLs, EKS endpoint, Jenkins IPs, IAM role ARNs) that the later pipelines consume. Account ID, cluster ID and public IP masked:**
 
-> 📸 **Screenshot:** `streamingapp-infra` stage view showing the Approve step
-<!-- ![Infra pipeline](docs/screenshots/s2-infra-pipeline.png) -->
+![Terraform apply](docs/screenshots/s2-terraform-apply.png)
+
+Later runs of the `streamingapp-infra` job on unchanged code report `0 added, 0 changed, 0 destroyed`: Terraform is idempotent, so a re-run only confirms AWS still matches the code (no drift).
+
+**`streamingapp-infra` run: Init & Validate → Plan → Approve → Apply, then Post Actions schedules `streamingapp-ansible`:**
+
+![Infra pipeline](docs/screenshots/s2-infra-pipeline.png)
 
 > 📸 **Screenshot:** EKS cluster and node group in the AWS console (4 nodes Ready)
 <!-- ![EKS cluster](docs/screenshots/s2-eks-console.png) -->
@@ -172,11 +190,13 @@ Init & Validate → Plan (archived as `tfplan.txt`) → **manual Approve** → A
 - **Jenkins job `streamingapp-ansible`** ([`jenkins/Jenkinsfile.ansible`](jenkins/Jenkinsfile.ansible)) is **triggered by `streamingapp-infra`** after a successful apply. It reads the Terraform outputs and runs both playbooks with secrets from Jenkins credentials. It skips the `jenkins` role so Jenkins never restarts itself mid-job.
 - The playbooks are idempotent: a second run reports no changes unless something actually changed (for example, the ALB URL used for CORS).
 
-> 📸 **Screenshot:** `streamingapp-ansible` console showing "Started by upstream project streamingapp-infra"
-<!-- ![Ansible triggered by infra](docs/screenshots/s3-ansible-triggered.png) -->
+**`streamingapp-ansible` started automatically by the upstream `streamingapp-infra` build:**
 
-> 📸 **Screenshot:** Ansible `PLAY RECAP` with `failed=0`
-<!-- ![Ansible recap](docs/screenshots/s3-ansible-recap.png) -->
+![Ansible triggered by infra](docs/screenshots/s1-jenkins-ansible-job.png)
+
+**`streamingapp-ansible` #3 console: node_exporter installed on the Jenkins host, and `PLAY RECAP` shows `ok=26 changed=1 unreachable=0 failed=0`:**
+
+![Ansible recap](docs/screenshots/s3-ansible-recap.png)
 
 ---
 
@@ -212,17 +232,21 @@ Deploy stages run only on `main`, `Develop` and `Sprint-3`. Other branches only 
 - **Safe deploys:** `--atomic` rolls back automatically if the new pods fail their health checks.
 - **Autoscaling:** HPAs scale on CPU, using metrics from metrics-server.
 
-> 📸 **Screenshot:** `streamingapp-app` stage view with all stages green
-<!-- ![App pipeline](docs/screenshots/s4-app-pipeline.png) -->
+**`streamingapp-app` build on `Sprint-3`, started by a GitHub push: every stage green, including the 5 parallel unit test suites, the EKS deploy and the post-deploy tests:**
 
-> 📸 **Screenshot:** ECR repository with images tagged by git SHA
-<!-- ![ECR images](docs/screenshots/s4-ecr-images.png) -->
+![App pipeline](docs/screenshots/s4-app-pipeline.png)
 
-> 📸 **Screenshot:** `kubectl get pods,svc,hpa,ingress -n streamingapp`
-<!-- ![Kubernetes resources](docs/screenshots/s4-kubectl-get.png) -->
+**The five ECR repositories, all with immutable tags and AES-256 encryption:**
 
-> 📸 **Screenshot:** HPA scaling up during the load test
-<!-- ![HPA scaling](docs/screenshots/s4-hpa-scaling.png) -->
+![ECR repositories](docs/screenshots/s4-ecr-images.png)
+
+**Pods, Services, HPAs and Ingress in the `streamingapp` namespace (`kubectl get pods,svc,hpa,ingress -n streamingapp`):**
+
+![Kubernetes resources](docs/screenshots/s4-kubectl-get.png)
+
+**HPA scaling `auth-service` from 1 to 5 replicas under load: CPU rises to 204% of the 70% target, then falls back as new pods share the load:**
+
+![HPA scaling](docs/screenshots/s4-hpa-scaling.png)
 
 ---
 
@@ -253,20 +277,37 @@ Deploy stages run only on `main`, `Develop` and `Sprint-3`. Other branches only 
 | JenkinsJobFailed | Last build of a job failed | – | warning |
 | JenkinsBuildQueueStuck | More than 3 builds queued | 15m | warning |
 
-> 📸 **Screenshot:** Prometheus Targets page with all targets UP
-<!-- ![Prometheus targets](docs/screenshots/s5-prometheus-targets.png) -->
+**Prometheus target health: every scrape target is UP.**
 
-> 📸 **Screenshot:** Grafana application performance dashboard
-<!-- ![Grafana app dashboard](docs/screenshots/s5-grafana-app.png) -->
+Jenkins (Prometheus plugin), the Jenkins host (node_exporter :9100) and Grafana:
 
-> 📸 **Screenshot:** Grafana Jenkins dashboard
-<!-- ![Grafana Jenkins dashboard](docs/screenshots/s5-grafana-jenkins.png) -->
+![Prometheus targets: Jenkins and Grafana](docs/screenshots/s5-prometheus-targets-1.png)
 
-> 📸 **Screenshot:** Slack `#devops-alerts` showing a FIRING and a RESOLVED alert
-<!-- ![Slack alerts](docs/screenshots/s5-slack-alerts.png) -->
+Application services scraped through ServiceMonitors (`/metrics` on admin, auth and chat services):
 
-> 📸 **Screenshot:** Slack Jenkins failure notification
-<!-- ![Jenkins failure in Slack](docs/screenshots/s5-slack-jenkins-failure.png) -->
+![Prometheus targets: application services](docs/screenshots/s5-prometheus-targets-2.png)
+
+**Grafana "StreamingApp - Application" dashboard, pods and autoscaling: CPU and memory per pod, HPA replicas (current vs max), container restarts, Node.js event loop lag and heap usage:**
+
+![Grafana application dashboard](docs/screenshots/s5-grafana-app.png)
+
+**Grafana "StreamingApp - Jenkins CI/CD" dashboard: last result of each job, build durations, executors and queue, and the Jenkins host's CPU, memory and disk (node_exporter):**
+
+![Grafana Jenkins dashboard](docs/screenshots/s5-grafana-jenkins.png)
+
+**Alertmanager → Slack `#devops-alerts`, tested by scaling `admin-service` to 0 replicas:**
+
+🚨 `AppServiceDown (critical)` fires after the deployment has had 0 available replicas for 1 minute:
+
+![Slack alert firing](docs/screenshots/s5-slack-alert-firing.png)
+
+✅ The same alert is RESOLVED once the service is scaled back up:
+
+![Slack alert resolved](docs/screenshots/s5-slack-alert-resolved.png)
+
+**Failed deployment notifications, tested with a deliberately failing unit test:** Jenkins posts ❌ "Build #7 on Sprint-3 FAILED" with the build link, and Prometheus fires 🚨 `JenkinsJobFailed (warning)` for the same job:
+
+![Jenkins failure in Slack](docs/screenshots/s5-slack-jenkins-failure.png)
 
 ---
 
@@ -288,8 +329,9 @@ Each script prints PASS / FAIL per check and exits non-zero on any failure. That
 - **Automated triggers:** code push → build → deploy → test, and infra apply → Ansible → app deploy → test.
 - **Documentation:** the [Execution Runbook](docs/RUNBOOK.md) covers every phase, verification and troubleshooting. Test details are in [`tests/README.md`](tests/README.md).
 
-> 📸 **Screenshot:** Deployment Tests / API Tests console output with the `Result: N passed, 0 failed` line
-<!-- ![Test results](docs/screenshots/s6-test-results.png) -->
+**`streamingapp-app` #9 API Tests stage against the live EKS deployment: frontend, auth, access control and streaming (through MongoDB) checks, `Result: 18 passed, 0 failed`:**
+
+![Test results](docs/screenshots/s6-test-results.png)
 
 > 📸 **Screenshot:** the full chain: infra → ansible → app builds started by upstream projects
 <!-- ![End-to-end chain](docs/screenshots/s6-e2e-chain.png) -->

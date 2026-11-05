@@ -9,8 +9,6 @@ A video streaming application (React frontend, 4 Node.js microservices, MongoDB)
 | [Final presentation](docs/final%20ppt.pptx) | Slide summary of the project |
 | [Viva Q&A](docs/Viva-QA.docx) | Design decisions explained |
 
-> **Screenshots:** placeholders are marked with 📸. Save images in `docs/screenshots/` with the file name shown, then remove the `<!--` and `-->` around the image line.
-
 ---
 
 ## Contents
@@ -176,8 +174,9 @@ Later runs of the `streamingapp-infra` job on unchanged code report `0 added, 0 
 
 ![Infra pipeline](docs/screenshots/s2-infra-pipeline.png)
 
-> 📸 **Screenshot:** EKS cluster and node group in the AWS console (4 nodes Ready)
-<!-- ![EKS cluster](docs/screenshots/s2-eks-console.png) -->
+**`kubectl get nodes`: the EKS managed node group's 4 t3.small Spot nodes, spread over both private subnets (`10.0.1.x`, `10.0.2.x`), all `Ready` on Kubernetes v1.35:**
+
+![EKS nodes](docs/screenshots/s2-eks-nodes.png)
 
 ---
 
@@ -240,7 +239,7 @@ Deploy stages run only on `main`, `Develop` and `Sprint-3`. Other branches only 
 
 ![ECR repositories](docs/screenshots/s4-ecr-images.png)
 
-**Pods, Services, HPAs and Ingress in the `streamingapp` namespace (`kubectl get pods,svc,hpa,ingress -n streamingapp`):**
+**Pods, Services, HPAs and Ingress in the `streamingapp` namespace (`kubectl get pods,svc,hpa,ingress -n streamingapp`): all 6 pods `1/1 Running` with 0 restarts (`mongo-0` kept running through the latest rollout), every Service internal (`ClusterIP`), 3 HPAs on CPU targets, and both Ingresses sharing one ALB:**
 
 ![Kubernetes resources](docs/screenshots/s4-kubectl-get.png)
 
@@ -333,8 +332,9 @@ Each script prints PASS / FAIL per check and exits non-zero on any failure. That
 
 ![Test results](docs/screenshots/s6-test-results.png)
 
-> 📸 **Screenshot:** the full chain: infra → ansible → app builds started by upstream projects
-<!-- ![End-to-end chain](docs/screenshots/s6-e2e-chain.png) -->
+**The full chain from one click: `streamingapp-app` Sprint-3 #11 was started by `streamingapp-ansible` #4, which was started by `streamingapp-infra` #6, which was started manually. Provision → configure → deploy and test, with no further input:**
+
+![End-to-end chain](docs/screenshots/s6-e2e-chain.png)
 
 ---
 

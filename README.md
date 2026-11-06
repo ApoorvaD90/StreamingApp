@@ -13,6 +13,7 @@ A video streaming application (React frontend, 4 Node.js microservices, MongoDB)
 
 ## Contents
 
+- [Tools used](#tools-used)
 - [Architecture](#architecture)
 - [Sprint 1: Dockerize and set up Jenkins](#sprint-1-dockerize-and-set-up-jenkins)
 - [Sprint 2: Provision AWS with Terraform](#sprint-2-provision-aws-with-terraform)
@@ -23,6 +24,43 @@ A video streaming application (React frontend, 4 Node.js microservices, MongoDB)
 - [Security and reproducibility](#security-and-reproducibility)
 - [Cost and teardown](#cost-and-teardown)
 - [Repository structure](#repository-structure)
+
+---
+
+## Tools used
+
+| Area | Tool | Version | Used for |
+|---|---|---|---|
+| **Application** | React | – | Frontend, built into static files |
+| | Node.js / Express | 18 (`node:18-alpine`) | 4 backend microservices (auth, streaming, admin, chat) |
+| | MongoDB | 6 (`mongo:6`) | Database, run as a Kubernetes StatefulSet |
+| | nginx | 1.27 (`nginx:1.27-alpine`) | Serves the frontend inside its container |
+| **Containers** | Docker / Docker Compose | – | Multi-stage images; full local stack for testing |
+| **Source control** | Git + GitHub | – | Code hosting; push webhook triggers Jenkins |
+| **CI/CD** | Jenkins | LTS + Java 21 on Ubuntu 22.04 (EC2 `c7i-flex.large`) | 3 pipelines: infra, ansible, app (Multibranch) |
+| **Infrastructure as Code** | Terraform | 1.15.7 (AWS provider ~> 5.0) | VPC, EKS, EC2, ECR, S3, IAM, security groups; state in S3 + DynamoDB lock |
+| **Configuration management** | Ansible | – | Configures the Jenkins EC2 host and bootstraps the EKS cluster |
+| **Cloud (AWS)** | EKS | Kubernetes 1.35 | Managed Kubernetes; 4 × `t3.small` Spot worker nodes |
+| | EC2, VPC, NAT gateway | – | Jenkins server; private network across 2 AZs |
+| | ECR | – | Private registry for the 5 images (immutable tags, scan on push) |
+| | S3, DynamoDB | – | Video storage; Terraform state and state lock |
+| | IAM + IRSA | – | Role-based access, no static keys in Jenkins or pods |
+| | Application Load Balancer | – | Public entry point, created from the Kubernetes Ingress |
+| **Kubernetes** | kubectl | – | Cluster access from laptop and Jenkins |
+| | Helm | 3 | App chart (`helm/streamingapp`) and add-on charts |
+| | AWS Load Balancer Controller | chart 1.17.1 | Turns Ingress into an ALB |
+| | metrics-server | chart 3.14.0 | CPU metrics for the Horizontal Pod Autoscalers |
+| | EBS CSI driver | EKS add-on (pinned) | gp3 volumes for MongoDB and Prometheus |
+| **Monitoring** | kube-prometheus-stack | chart 92.3.1 | Installs Prometheus, Alertmanager, Grafana and exporters |
+| | Prometheus | – | Scrapes app, node, Kubernetes and Jenkins metrics; 12 custom alert rules |
+| | Alertmanager | – | Groups alerts and sends them to Slack |
+| | Grafana | – | Application and Jenkins dashboards |
+| | node_exporter | 1.12.1 | Host metrics from the Jenkins server |
+| **Notifications** | Slack | – | `#devops-alerts`: Alertmanager alerts and Jenkins build results |
+| **Testing** | Jest | – | Unit tests for the 4 services and the frontend |
+| | promtool | – | Alert rule syntax checks and unit tests |
+| | Bash test scripts | – | Infrastructure, deployment, API and monitoring checks (`tests/`) |
+| **Laptop** | AWS CLI v2, WSL (Ubuntu), Docker Desktop, PowerShell | – | Running Terraform, Ansible and kubectl locally |
 
 ---
 

@@ -1,0 +1,27 @@
+{{- /*
+Sprint 5: tells the Prometheus Operator (kube-prometheus-stack, installed by ansible/k8s-bootstrap.yml)
+to scrape GET /metrics on every backend service. Rendered only when the ServiceMonitor CRD exists,
+so the chart still installs on a cluster without the monitoring stack.
+*/}}
+{{- if and .Values.monitoring.enabled (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1/ServiceMonitor") }}
+{{- range $svcName, $svc := .Values.services }}
+{{- if and $svc.enabled $svc.metrics }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ $svcName }}
+  namespace: {{ $.Values.global.namespace }}
+  labels:
+    app: {{ $svcName }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ $svcName }}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ $.Values.monitoring.scrapeInterval }}
+---
+{{- end }}
+{{- end }}
+{{- end }}

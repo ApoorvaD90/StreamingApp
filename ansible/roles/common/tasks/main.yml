@@ -1,0 +1,33 @@
+---
+- name: Update apt cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+
+# Opt-in (-e upgrade_packages=true) so pipeline runs never upgrade/restart services mid-job
+- name: Upgrade all packages
+  apt:
+    upgrade: dist
+  when: upgrade_packages | default(false) | bool
+
+- name: Install NTP for time synchronization
+  apt:
+    name: ntp
+    state: present
+
+- name: Ensure NTP is enabled and running
+  systemd:
+    name: ntp
+    enabled: true
+    state: started
+  notify: restart ntp
+
+- name: Disable swap
+  command: swapoff -a
+  when: ansible_swaptotal_mb > 0
+
+- name: Remove swap entry from /etc/fstab
+  lineinfile:
+    path: /etc/fstab
+    regexp: '^\s*[^#].*\sswap\s'
+    state: absent

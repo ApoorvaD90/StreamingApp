@@ -1,0 +1,111 @@
+# Sprint 5: alerting rules for the application, the nodes and Jenkins.
+# Picked up by Prometheus (ruleSelectorNilUsesHelmValues: false) and routed by Alertmanager to Slack.
+# Applied by ansible/k8s-bootstrap.yml. The chart's default Kubernetes rules (KubePodCrashLooping,
+# KubeHpaMaxedOut, KubePersistentVolumeFillingUp, ...) stay enabled alongside these.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: streamingapp-alerts
+  namespace: monitoring
+spec:
+  groups:
+    - name: streamingapp.application
+      rules:
+        - alert: AppServiceDown
+          # From kube-state-metrics, so it also fires when no pod is left to scrape (crash loop, scaled to 0)
+          expr: kube_deployment_status_replicas_available{namespace="streamingapp"} < 1
+          for: 1m
+          labels: { severity: critical }
+          annotations:
+            summary: "{{ $labels.deployment }} has no available pods"
+            description: "Deployment {{ $labels.deployment }} in namespace streamingapp has had 0 available replicas for 1 minute."
+        - alert: MongoDBDown
+          expr: kube_statefulset_status_replicas_ready{namespace="streamingapp", statefulset="mongo"} < 1
+          for: 2m
+          labels: { severity: critical }
+          annotations:
+            summary: "MongoDB is not ready"
+            description: "StatefulSet mongo has had 0 ready replicas for 2 minutes; every backend service depends on it."
+        - alert: AppMetricsTargetDown
+          expr: up{namespace="streamingapp"} == 0
+          for: 2m
+          labels: { severity: warning }
+          annotations:
+            summary: "Prometheus cannot scrape {{ $labels.job }}"
+            description: "{{ $labels.pod }} does not answer GET /metrics."
+        - alert: AppHighErrorRate
+          expr: |
+            sum by (job) (rate(http_request_duration_seconds_count{namespace="streamingapp", status_code=~"5.."}[5m]))
+              / sum by (job) (rate(http_request_duration_seconds_count{namespace="streamingapp"}[5m])) > 0.05
+          for: 5m
+          labels: { severity: warning }
+          annotations:
+            summary: "{{ $labels.job }}: more than 5% of requests fail"
+            description: "{{ $value | humanizePercentage }} of {{ $labels.job }} requests returned 5xx over the last 5 minutes."
+        - alert: AppHighLatency
+          expr: |
+            histogram_quantile(0.95, sum by (job, le) (
+              rate(http_request_duration_seconds_bucket{namespace="streamingapp", route!="/api/health"}[5m]))) > 1
+          for: 10m
+          labels: { severity: warning }
+          annotations:
+            summary: "{{ $labels.job }}: p95 latency above 1s"
+            description: "95th percentile response time of {{ $labels.job }} is {{ $value | humanizeDuration }}."
+        - alert: AppPodRestarting
+          expr: increase(kube_pod_container_status_restarts_total{namespace="streamingapp"}[15m]) > 3
+          labels: { severity: warning }
+          annotations:
+            summary: "{{ $labels.pod }} restarted more than 3 times in 15 minutes"
+            description: "Check kubectl logs --previous -n streamingapp {{ $labels.pod }} (failing liveness probe or OOMKilled)."
+
+    - name: streamingapp.nodes
+      rules:
+        # Covers the EKS nodes (node-exporter DaemonSet) and the Jenkins server (job jenkins-node)
+        - alert: HostHighCPU
+          expr: 100 * (1 - avg by (job, instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) > 85
+          for: 10m
+          labels: { severity: warning }
+          annotations:
+            summary: "High CPU on {{ $labels.instance }}"
+            description: "CPU usage has been above 85% for 10 minutes ({{ $value | printf \"%.0f\" }}%)."
+        - alert: HostHighMemory
+          expr: 100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 90
+          for: 10m
+          labels: { severity: warning }
+          annotations:
+            summary: "High memory usage on {{ $labels.instance }}"
+            description: "Memory usage has been above 90% for 10 minutes ({{ $value | printf \"%.0f\" }}%)."
+        - alert: HostDiskAlmostFull
+          expr: |
+            100 * node_filesystem_avail_bytes{mountpoint="/", fstype!~"tmpfs|overlay"}
+              / node_filesystem_size_bytes{mountpoint="/", fstype!~"tmpfs|overlay"} < 15
+          for: 10m
+          labels: { severity: critical }
+          annotations:
+            summary: "Root disk almost full on {{ $labels.instance }}"
+            description: "Only {{ $value | printf \"%.0f\" }}% free. On Jenkins: docker image prune -af; on a node: check image garbage collection."
+
+    - name: streamingapp.jenkins
+      rules:
+        - alert: JenkinsDown
+          expr: up{job="jenkins"} == 0
+          for: 2m
+          labels: { severity: critical }
+          annotations:
+            summary: "Jenkins is unreachable"
+            description: "Prometheus cannot scrape http://<jenkins-private-ip>:8080/prometheus/ (service stopped or instance down)."
+        - alert: JenkinsJobFailed
+          # Prometheus metrics plugin: 0 SUCCESS, 1 UNSTABLE, 2 FAILURE, 3 NOT_BUILT, 4 ABORTED.
+          # Stays active until the job's next successful build.
+          expr: default_jenkins_builds_last_build_result_ordinal{jenkins_job=~"streamingapp-.*"} == 2
+          labels: { severity: warning }
+          annotations:
+            summary: "Jenkins job {{ $labels.jenkins_job }} failed"
+            description: "The last build of {{ $labels.jenkins_job }} failed. Open Jenkins for the console output."
+        - alert: JenkinsBuildQueueStuck
+          expr: default_jenkins_executors_queue_length > 3
+          for: 15m
+          labels: { severity: warning }
+          annotations:
+            summary: "Jenkins build queue is backing up"
+            description: "{{ $value }} builds have been waiting for an executor for 15 minutes."

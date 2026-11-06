@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   mongo:
     image: mongo:6
@@ -12,6 +10,10 @@ services:
   auth:
     build:
       context: ./backend/authService
+    networks:
+      default:
+        aliases:
+          - auth-service
     depends_on:
       - mongo
     environment:
@@ -30,6 +32,10 @@ services:
     build:
       context: ./backend
       dockerfile: streamingService/Dockerfile
+    networks:
+      default:
+        aliases:
+          - streaming-service
     depends_on:
       - mongo
     environment:
@@ -50,6 +56,10 @@ services:
     build:
       context: ./backend
       dockerfile: adminService/Dockerfile
+    networks:
+      default:
+        aliases:
+          - admin-service
     depends_on:
       - mongo
     environment:
@@ -69,6 +79,10 @@ services:
     build:
       context: ./backend
       dockerfile: chatService/Dockerfile
+    networks:
+      default:
+        aliases:
+          - chat-service
     depends_on:
       - mongo
     environment:

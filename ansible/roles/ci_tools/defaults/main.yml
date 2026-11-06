@@ -1,0 +1,3 @@
+---
+nodejs_major: 20
+ansible_pip_version: "10.7.0"   # bundles amazon.aws + kubernetes.core collections

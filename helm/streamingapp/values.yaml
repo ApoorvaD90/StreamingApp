@@ -1,0 +1,88 @@
+global:
+  # Both intentionally empty and required by the templates (no account ID in code, no 'latest').
+  # Jenkins resolves them at runtime: registry from `aws sts get-caller-identity`, tag = git SHA.
+  imageRegistry: ""
+  imageTag: ""
+  namespace: streamingapp
+  secretName: streamingapp-secrets
+
+# Sprint 5: one ServiceMonitor per service with metrics: true (GET /metrics, prom-client)
+monitoring:
+  enabled: true
+  scrapeInterval: 30s
+
+# MongoDB (k8s/mongo-statefulset.yaml) and the ALB Ingress (k8s/ingress-*.yaml)
+# are applied by the Jenkins Deploy stage, not by this chart.
+services:
+  frontend:
+    enabled: true
+    replicaCount: 1
+    image:
+      name: streamingapp/frontend
+    service:
+      port: 80
+    healthPath: /health # served by nginx.conf
+    resources:
+      requests: { cpu: 50m, memory: 64Mi }
+      limits: { cpu: 200m, memory: 128Mi }
+
+  auth-service:
+    enabled: true
+    metrics: true
+    replicaCount: 1
+    image:
+      name: streamingapp/auth-service
+    service:
+      port: 3001
+    hpa:
+      minReplicas: 1
+      maxReplicas: 6
+      cpuUtilization: 70
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits: { cpu: 300m, memory: 256Mi }
+
+  streaming-service:
+    enabled: true
+    metrics: true
+    replicaCount: 1
+    image:
+      name: streamingapp/streaming-service
+    service:
+      port: 3002
+    hpa:
+      minReplicas: 1
+      maxReplicas: 8
+      cpuUtilization: 60
+    resources:
+      requests: { cpu: 200m, memory: 256Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+
+  admin-service:
+    enabled: true
+    metrics: true
+    replicaCount: 1
+    image:
+      name: streamingapp/admin-service
+    service:
+      port: 3003
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits: { cpu: 300m, memory: 256Mi }
+
+  chat-service:
+    enabled: true
+    metrics: true
+    replicaCount: 1
+    image:
+      name: streamingapp/chat-service
+    service:
+      port: 3004
+    hpa:
+      minReplicas: 1
+      maxReplicas: 6
+      cpuUtilization: 70
+    # CPU requests are required for the HPA to compute utilisation
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits: { cpu: 300m, memory: 256Mi }

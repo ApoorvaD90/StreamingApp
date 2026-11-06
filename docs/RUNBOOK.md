@@ -28,7 +28,7 @@ End-to-end steps to build, provision, configure and deploy StreamingApp on AWS E
 2. Home IP changed? `(Invoke-RestMethod https://checkip.amazonaws.com).Trim()` vs `aws eks describe-cluster --name streamingapp-cluster --query cluster.resourcesVpcConfig.publicAccessCidrs`. If they differ, Jenkins (`:8080`), SSH and `kubectl` all time out although everything is running → set `$env:TF_VAR_admin_cidr = "<new-ip>/32"`, then in `terraform/`: `terraform plan "-out=ip.tfplan"` (✅ only in-place updates: Jenkins SG, EKS public CIDRs, OIDC thumbprint "known after apply"; 0 to destroy) → `terraform apply ip.tfplan`. Update the Jenkins `admin-cidr` credential to the same value if it already exists.
 3. `kubectl get nodes` ✅ 4 Ready; `http://<JENKINS_EIP>:8080` ✅ login page.
 
-**Delivery branch:** the jobs and the Jenkinsfile deploy condition use **`Sprint-3`**. If the code is merged into `Develop` or `main` later, use that branch name in Steps 6.4–6.6 and 7.3 (deploy already runs on `main`, `Develop` and `Sprint-3`).
+**Delivery branch:** the app pipeline (`streamingapp-app`) deploys from **`Develop`** (and `main`); `streamingapp-ansible` triggers `streamingapp-app/Develop`. Merge `Sprint-3` into `Develop` and push before Phase 7. The infra and ansible jobs read their Jenkinsfiles from the branch set in 6.4 and 6.5.
 
 ## Sprint coverage
 
@@ -61,8 +61,8 @@ End-to-end steps to build, provision, configure and deploy StreamingApp on AWS E
 | Jenkins job | Definition | Purpose |
 |---|---|---|
 | `streamingapp-infra` | [`jenkins/Jenkinsfile.infra`](../jenkins/Jenkinsfile.infra) | Terraform init → validate → plan → manual approval → apply. On a successful apply it triggers `streamingapp-ansible`. |
-| `streamingapp-ansible` | [`jenkins/Jenkinsfile.ansible`](../jenkins/Jenkinsfile.ansible) | Reads Terraform outputs → tests the alert rules → configures EC2 (`ansible/site.yml`) → bootstraps EKS add-ons, namespace, app secret **and the monitoring stack** (`ansible/k8s-bootstrap.yml`) → verifies infrastructure and monitoring. On success it **triggers `streamingapp-app/Sprint-3`**. |
-| `streamingapp-app` (Multibranch) | [`Jenkinsfile`](../Jenkinsfile) | Unit tests → Docker build → push to ECR (git-SHA tag) → Helm deploy to EKS → deployment tests → API tests → monitoring check. Deploy and tests run only on `Sprint-3`, `Develop` and `main`. Triggered by a GitHub push or by `streamingapp-ansible`. |
+| `streamingapp-ansible` | [`jenkins/Jenkinsfile.ansible`](../jenkins/Jenkinsfile.ansible) | Reads Terraform outputs → tests the alert rules → configures EC2 (`ansible/site.yml`) → bootstraps EKS add-ons, namespace, app secret **and the monitoring stack** (`ansible/k8s-bootstrap.yml`) → verifies infrastructure and monitoring. On success it **triggers `streamingapp-app/Develop`**. |
+| `streamingapp-app` (Multibranch) | [`Jenkinsfile`](../Jenkinsfile) | Unit tests → Docker build → push to ECR (git-SHA tag) → Helm deploy to EKS → deployment tests → API tests → monitoring check. Deploy and tests run only on `Develop` and `main`. Triggered by a GitHub push or by `streamingapp-ansible`. |
 
 All three jobs post to Slack `#devops-alerts` on failure (the app job also on success); Alertmanager posts firing/resolved alerts to the same channel.
 
@@ -432,10 +432,10 @@ Do not create static AWS credentials — AWS access comes only from the Jenkins 
 
 **6.6 App job** — New Item → `streamingapp-app` → **Multibranch Pipeline**:
 - Branch Sources → Add source → **GitHub**: Credentials `github-token`, Repository HTTPS URL as above.
-- Behaviours → Add → **Filter by name (with wildcards)** → Include **`Sprint-3`** (older branches carry an outdated Jenkinsfile).
+- Behaviours → Add → **Filter by name (with wildcards)** → Include **`Develop`** (older branches carry an outdated Jenkinsfile; add `main` once it is merged).
 - Build Configuration → Mode *by Jenkinsfile*, Script Path `Jenkinsfile` → **Save**.
 
-Saving triggers a scan, which **immediately builds `Sprint-3`** — including Deploy. Before Phase 7.1 has run the Ansible bootstrap this build fails at Deploy (no secret/StorageClass yet); abort it (✕) or ignore it (the failure also posts a ❌ to Slack — that is fine). The real run is triggered automatically in 7.1–7.3.
+Saving triggers a scan, which **immediately builds `Develop`** — including Deploy. Before Phase 7.1 has run the Ansible bootstrap this build fails at Deploy (no secret/StorageClass yet); abort it (✕) or ignore it (the failure also posts a ❌ to Slack — that is fine). The real run is triggered automatically in 7.1–7.3.
 
 **6.7 Webhook** — GitHub repo → **Settings** → **Webhooks** → **Add webhook**: Payload URL `http://<JENKINS_EIP>:8080/github-webhook/`, Content type `application/json`, *Just the push event* → Add webhook.
 ✅ Edit → **Recent Deliveries** shows a green ✔ ping. (Settings is visible only to repo admins.)
@@ -444,7 +444,7 @@ Saving triggers a scan, which **immediately builds `Sprint-3`** — including De
 
 ## Phase 7 — Run the pipelines (Sprints 2, 3, 4, 5, 6)
 
-One apply now starts the whole chain automatically: **`streamingapp-infra` → `streamingapp-ansible` (configuration + monitoring + verification) → `streamingapp-app/Sprint-3` (build, deploy, tests)**.
+One apply now starts the whole chain automatically: **`streamingapp-infra` → `streamingapp-ansible` (configuration + monitoring + verification) → `streamingapp-app/Develop` (build, deploy, tests)**.
 
 **7.1 Sprint 2 — Terraform through Jenkins** (`streamingapp-infra`)
 1. **Build Now** the first time (the job learns its `ACTION` parameter from the Jenkinsfile and runs a `plan`); afterwards use **Build with Parameters**.
@@ -466,7 +466,7 @@ Open `streamingapp-ansible` → the newest build:
 - *Verify infrastructure* ✅ `Result: N passed, 0 failed` (Sprint 6).
 - *Verify monitoring* ✅ `Result: ... passed, 0 failed` — includes `Jenkins (Prometheus metrics plugin)` and `Jenkins host (node_exporter)` targets up.
 - `APP_PUBLIC_URL = ''` is expected on a new cluster — the ALB only appears in 7.3.
-- At the end: *Scheduling project: streamingapp-app » Sprint-3* (Sprint 6 trigger).
+- At the end: *Scheduling project: streamingapp-app » Develop* (Sprint 6 trigger).
 
 Optional check from the laptop:
 ```powershell
@@ -477,13 +477,14 @@ kubectl get pods -n monitoring                                                 #
 
 **7.3 Sprint 4 + 6 — app deploy, started by Ansible, then by a code push** (`streamingapp-app`)
 
-First run: `streamingapp-app » Sprint-3` starts automatically after 7.2 — status page **"Started by upstream project streamingapp-ansible"** (Sprint 6 trigger evidence). Let it finish (~20 min the first time), then push to show the webhook path:
+First run: `streamingapp-app » Develop` starts automatically after 7.2 — status page **"Started by upstream project streamingapp-ansible"** (Sprint 6 trigger evidence). Let it finish (~20 min the first time), then push to show the webhook path:
 ```powershell
-git pull origin Sprint-3
+git checkout Develop
+git pull origin Develop
 git commit --allow-empty -m "Trigger CI/CD pipeline"
-git push origin Sprint-3
+git push origin Develop
 ```
-✅ `streamingapp-app » Sprint-3` starts within seconds (webhook, **"Started by GitHub push"**) and all stages pass:
+✅ `streamingapp-app » Develop` starts within seconds (webhook, **"Started by GitHub push"**) and all stages pass:
 1. **Checkout** — git SHA and AWS account resolved at runtime
 2. **Unit Tests** — 5 parallel suites
 3. **Docker Build & Push** — 5 images tagged with the SHA, pushed to ECR (skipped if that tag already exists)
@@ -492,14 +493,14 @@ git push origin Sprint-3
 6. **API Tests** — through the ALB: SPA, register/login/JWT, 401/403 access control, catalogue (`App URL: http://k8s-streamingapp-....elb.amazonaws.com`, `Result: N passed, 0 failed`)
 7. **Monitoring Check** — Prometheus scrapes the 4 backends, nodes, Jenkins; rules, Alertmanager, Grafana
 
-✅ Slack `#devops-alerts` shows `:white_check_mark: Build #N on Sprint-3 succeeded. Tag: <sha>`.
+✅ Slack `#devops-alerts` shows `:white_check_mark: Build #N on Develop succeeded. Tag: <sha>`.
 
 Harmless log line: `Could not update commit status` (GitHub status badge). It does not fail the build.
 No build started? `streamingapp-app` → **Scan Repository Now**, and check the webhook's Recent Deliveries.
 
 **7.4 CORS** — automatic now (step 4 above). Fallback if the browser still shows CORS errors: `streamingapp-ansible` → **Build with Parameters** → leave `APP_URL` empty → Build. ✅ `APP_PUBLIC_URL = 'http://k8s-streamingapp-....'`; the secret tasks show `ok` when the app pipeline already set the same value.
 
-**7.5 Promote** (optional) — PR **Sprint-3 → Develop** (then `main`), merge, and add the branch to the job's filter (e.g. `Sprint-3 Develop main`) → *Scan Repository Now*.
+**7.5 Promote** (optional) — PR **Develop → main**, merge, and add `main` to the job's filter (e.g. `Develop main`) → *Scan Repository Now*.
 
 ---
 
@@ -537,7 +538,7 @@ kubectl get hpa auth-service-hpa -n streamingapp -w
 kubectl delete pod -n streamingapp -l app=auth-service --wait=false; kubectl get pods -n streamingapp -w
 ```
 
-**8.5 Automatic rollback** (optional) — push a change that breaks a health endpoint to `Sprint-3`; the Deploy stage fails and Helm `--atomic` restores the previous release (`helm history streamingapp -n streamingapp`). Revert afterwards.
+**8.5 Automatic rollback** (optional) — push a change that breaks a health endpoint to `Develop`; the Deploy stage fails and Helm `--atomic` restores the previous release (`helm history streamingapp -n streamingapp`). Revert afterwards.
 
 **8.6 Application** — open the App URL: register, log in, chat. DevTools (F12) → Network: calls go to `/api/auth/...` on the same host. The video list is empty until videos are uploaded to S3.
 
@@ -549,7 +550,7 @@ aws sts get-caller-identity                     # ✅ :user/streamingapp-admin
 aws eks describe-cluster --name streamingapp-cluster --query cluster.resourcesVpcConfig.publicAccessCidrs   # ✅ only the admin /32
 ```
 
-Screenshot checklist: infra stage view + "No changes" plan · ansible "Started by upstream project" · ansible stage view · app `Sprint-3` stage view (all green) · webhook delivery 200 · ECR SHA tags · `kubectl get pods,svc,hpa,ingress` · HPA scaling · app in a browser. Crop out keys, tokens and passwords.
+Screenshot checklist: infra stage view + "No changes" plan · ansible "Started by upstream project" · ansible stage view · app `Develop` stage view (all green) · webhook delivery 200 · ECR SHA tags · `kubectl get pods,svc,hpa,ingress` · HPA scaling · app in a browser. Crop out keys, tokens and passwords.
 
 ---
 
@@ -649,7 +650,7 @@ kubectl port-forward -n monitoring svc/monitoring-grafana 3000:80
 **10.4 Jenkins ↔ Prometheus integration** (evidence)
 ```powershell
 (curl.exe -s http://<JENKINS_EIP>:8080/prometheus/) -split "`n" | Select-String "last_build_result_ordinal"
-#   ✅ one line per job, e.g. default_jenkins_builds_last_build_result_ordinal{jenkins_job="streamingapp-app/Sprint-3",...} 0.0
+#   ✅ one line per job, e.g. default_jenkins_builds_last_build_result_ordinal{jenkins_job="streamingapp-app/Develop",...} 0.0
 ```
 The same values appear in the Jenkins dashboard (10.3), so Prometheus scrapes Jenkins over the private network.
 
@@ -675,15 +676,15 @@ kubectl scale deploy admin-service -n streamingapp --replicas=1
 ```powershell
 (Get-Content backend\streamingService\__tests__\health.test.js) -replace "msg: 'OK'", "msg: 'BROKEN'" | Set-Content backend\streamingService\__tests__\health.test.js
 git commit -am "Demo: failing test to show Jenkins failure notification"
-git push origin Sprint-3
+git push origin Develop
 ```
-✅ `streamingapp-app » Sprint-3` fails at *Unit Tests → Streaming Service*; Slack shows `:x: Build #N on Sprint-3 FAILED ...` with the link. Screenshot.
+✅ `streamingapp-app » Develop` fails at *Unit Tests → Streaming Service*; Slack shows `:x: Build #N on Develop FAILED ...` with the link. Screenshot.
 ✅ ~2 min later (Prometheus plugin refreshes every 2 min) Slack also shows `FIRING: JenkinsJobFailed` from Alertmanager. Screenshot.
 
 Revert:
 ```powershell
 git revert --no-edit HEAD
-git push origin Sprint-3
+git push origin Develop
 ```
 ✅ Build succeeds (`:white_check_mark: ... succeeded`), then `RESOLVED: JenkinsJobFailed`.
 
@@ -706,7 +707,7 @@ Screenshot checklist (Sprint 5): `kubectl get pods -n monitoring` · Prometheus 
 | Deployment success | `tests/deployment/verify-deployment.sh` | app *Deployment Tests* |
 | Application functionality | `tests/api/api-tests.sh` | app *API Tests* |
 
-**11.2 Pipeline test evidence** — open the green builds from Phase 7 and screenshot the console output of: `streamingapp-ansible` → *Verify infrastructure* and *Verify monitoring* (the `PASS` lines and `Result: N passed, 0 failed`); `streamingapp-app » Sprint-3` → *Deployment Tests*, *API Tests*, *Monitoring Check*; and the stage view of both jobs (all stages green).
+**11.2 Pipeline test evidence** — open the green builds from Phase 7 and screenshot the console output of: `streamingapp-ansible` → *Verify infrastructure* and *Verify monitoring* (the `PASS` lines and `Result: N passed, 0 failed`); `streamingapp-app » Develop` → *Deployment Tests*, *API Tests*, *Monitoring Check*; and the stage view of both jobs (all stages green).
 
 **11.3 Run the tests by hand** (**WSL**, repository root — shows they are independent of Jenkins):
 ```bash
@@ -723,7 +724,7 @@ bash tests/monitoring/verify-monitoring.sh --with-app
 **11.4 Final end-to-end run** — prove the whole chain from one action, with nothing done by hand:
 1. `streamingapp-infra` → **Build with Parameters** → `apply` → Approve (✅ `0 to destroy`; on an unchanged environment the plan shows *No changes* and apply is a no-op).
 2. ✅ `streamingapp-ansible` starts (*Started by upstream project streamingapp-infra*) → all stages green.
-3. ✅ `streamingapp-app » Sprint-3` starts (*Started by upstream project streamingapp-ansible*) → all 7 stages green.
+3. ✅ `streamingapp-app » Develop` starts (*Started by upstream project streamingapp-ansible*) → all 7 stages green.
 4. ✅ Slack shows the app success message; no alert other than any you triggered.
 Screenshot the three build status pages showing the *Started by upstream project* lines, and the Jenkins dashboard in Grafana with all three jobs SUCCESS.
 
@@ -798,7 +799,7 @@ Every error below was hit during a real run; the fix is either already in the co
 | Deploy: `kubectl patch secret ... error decoding patch: invalid character 'd' looking for beginning of object key string` | Groovy's `'''` string removed the escaped quotes from the JSON — fixed: the Jenkinsfile builds the patch with `printf` in single quotes |
 | CORS error / login fails in the browser | Run 7.4 (Ansible with `APP_URL` empty) — it sets `CLIENT_URLS` from the Ingress and restarts the pods |
 | Ansible re-run shows `ok` / `skipping` for the secret tasks | Correct — the secret already had the right values |
-| Deploy/Smoke stages skipped | Branch is not `Sprint-3`/`Develop`/`main` — other branches only test and build |
+| Deploy/Smoke stages skipped | Branch is not `Develop`/`main` — other branches only test and build |
 | Webhook delivery times out / `failed to connect to host` | Jenkins SG lacks the GitHub ranges (Phase 4 not applied), GitHub added new ranges — compare `(Invoke-RestMethod https://api.github.com/meta).hooks` with `github_webhook_cidrs` in `variables.tf` (the `9.234.x.x/28` ranges were added this way), apply, push — or Jenkins is stopped |
 | Destroy: `ECR Repository ... not empty` | Force-delete the repos (9.2), then `terraform destroy` again |
 

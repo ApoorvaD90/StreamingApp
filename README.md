@@ -252,7 +252,7 @@ Later runs of the `streamingapp-infra` job on unchanged code report `0 added, 0 
 | 5–7 | Deployment / API / Monitoring tests | Added in Sprint 6 |
 | Post | Notifications | Slack message on success and failure |
 
-Deploy stages run only on `main`, `Develop` and `Sprint-3`. Other branches only test and build.
+Deploy stages run only on `main` and `Develop`. Other branches only test and build.
 
 **Kubernetes deployment (Helm chart [`helm/streamingapp`](helm/streamingapp)):**
 

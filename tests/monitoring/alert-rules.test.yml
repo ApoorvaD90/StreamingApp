@@ -47,7 +47,7 @@ tests:
   - name: A failed Jenkins build raises JenkinsJobFailed until the next successful build
     interval: 1m
     input_series:
-      - series: 'default_jenkins_builds_last_build_result_ordinal{jenkins_job="streamingapp-app/Sprint-3"}'
+      - series: 'default_jenkins_builds_last_build_result_ordinal{jenkins_job="streamingapp-app/Develop"}'
         values: "0 0 2 2 0"
     alert_rule_test:
       - eval_time: 1m
@@ -56,10 +56,10 @@ tests:
       - eval_time: 3m
         alertname: JenkinsJobFailed
         exp_alerts:
-          - exp_labels: { severity: warning, jenkins_job: "streamingapp-app/Sprint-3" }
+          - exp_labels: { severity: warning, jenkins_job: "streamingapp-app/Develop" }
             exp_annotations:
-              summary: "Jenkins job streamingapp-app/Sprint-3 failed"
-              description: "The last build of streamingapp-app/Sprint-3 failed. Open Jenkins for the console output."
+              summary: "Jenkins job streamingapp-app/Develop failed"
+              description: "The last build of streamingapp-app/Develop failed. Open Jenkins for the console output."
       - eval_time: 4m
         alertname: JenkinsJobFailed
         exp_alerts: []

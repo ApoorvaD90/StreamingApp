@@ -1,5 +1,5 @@
 // Sprint 4: application CI/CD (Multibranch job: streamingapp-app)
-// Every branch: test + build + push to ECR. main/Develop/Sprint-3: also deploy to EKS + post-deploy tests.
+// Every branch: test + build + push to ECR. main/Develop: also deploy to EKS + post-deploy tests.
 // Sprint 5: Slack notifications; Sprint 6: deployment, API and monitoring tests (scripts in tests/).
 // Triggered by a GitHub push (webhook) or by streamingapp-ansible after configuration changes.
 // Infrastructure and configuration run in their own jobs: jenkins/Jenkinsfile.infra and jenkins/Jenkinsfile.ansible.
@@ -71,7 +71,7 @@ pipeline {
     }
     // -- Stage 4: Deploy to EKS ------------------------------------
     stage('Deploy to EKS') {
-      when { anyOf { branch 'main'; branch 'Develop'; branch 'Sprint-3' } }
+      when { anyOf { branch 'main'; branch 'Develop' } }
       steps {
         sh '''
           aws eks update-kubeconfig --name $EKS_CLUSTER --region $AWS_DEFAULT_REGION
@@ -118,7 +118,7 @@ pipeline {
     // -- Stage 5: Deployment Tests (Sprint 6) -------------------
     // Rollout, image tags = this commit, probes, HPAs, in-cluster health + /metrics, ServiceMonitors
     stage('Deployment Tests') {
-      when { anyOf { branch 'main'; branch 'Develop'; branch 'Sprint-3' } }
+      when { anyOf { branch 'main'; branch 'Develop' } }
       steps {
         sh 'bash tests/deployment/verify-deployment.sh'
       }
@@ -126,7 +126,7 @@ pipeline {
     // -- Stage 6: API Tests (Sprint 6) --------------------------
     // Through the public ALB: register/login/JWT, access control, video catalogue (MongoDB), SPA
     stage('API Tests') {
-      when { anyOf { branch 'main'; branch 'Develop'; branch 'Sprint-3' } }
+      when { anyOf { branch 'main'; branch 'Develop' } }
       steps {
         sh 'bash tests/api/api-tests.sh'
       }
@@ -134,7 +134,7 @@ pipeline {
     // -- Stage 7: Monitoring Check (Sprints 5-6) ----------------
     // Prometheus scrapes the new pods, nodes and Jenkins; alert rules, Alertmanager and Grafana up
     stage('Monitoring Check') {
-      when { anyOf { branch 'main'; branch 'Develop'; branch 'Sprint-3' } }
+      when { anyOf { branch 'main'; branch 'Develop' } }
       steps {
         sh 'bash tests/monitoring/verify-monitoring.sh --with-app'
       }

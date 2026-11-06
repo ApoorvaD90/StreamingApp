@@ -10,7 +10,7 @@ pipeline {
            description: 'Public app URL for CORS, e.g. http://<ALB DNS>. Leave empty to auto-detect from the Ingress.')
     booleanParam(name: 'TRIGGER_APP_DEPLOY', defaultValue: true,
                  description: 'Start the app pipeline (streamingapp-app/APP_BRANCH) after a successful run.')
-    string(name: 'APP_BRANCH', defaultValue: 'Sprint-3', description: 'Branch of streamingapp-app to deploy.')
+    string(name: 'APP_BRANCH', defaultValue: 'Develop', description: 'Branch of streamingapp-app to deploy.')
   }
   environment {
     AWS_DEFAULT_REGION        = 'us-east-1'

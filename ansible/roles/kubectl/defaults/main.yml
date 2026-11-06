@@ -1,0 +1,5 @@
+---
+# Pinned tool versions: every run installs exactly the same builds
+kubectl_version: v1.35.0      # must stay within one minor version of the EKS cluster (1.35)
+helm_version: v3.16.4
+terraform_version: 1.15.7    # must equal the laptop version: state written by a newer Terraform cannot be read by an older one

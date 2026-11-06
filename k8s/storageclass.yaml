@@ -1,0 +1,16 @@
+# Default StorageClass for the cluster. EKS 1.30+ no longer marks any class as default,
+# so PVCs without a storageClassName (e.g. MongoDB's) would stay Pending forever.
+# Provisioned by the EBS CSI driver add-on (terraform/eks.tf).
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: ebs.csi.aws.com
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+reclaimPolicy: Delete
+parameters:
+  type: gp3
+  encrypted: "true"

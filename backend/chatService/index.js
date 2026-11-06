@@ -41,6 +41,12 @@ app.use(cors({
 
 app.use(cookieParser());
 app.use(express.json());
+
+// Prometheus metrics (Sprint 5): request count/latency for every route below, scraped at /metrics
+const { metricsMiddleware, metricsHandler } = require('./util/metrics');
+app.use(metricsMiddleware);
+app.get('/metrics', metricsHandler);
+
 app.use(morgan('dev'));
 
 const { connectDB } = require('./db');

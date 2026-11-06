@@ -1,0 +1,13 @@
+# Build context for the streaming, admin and chat images (docker-compose.yml and the Jenkinsfile use ./backend).
+# Each image runs its own npm install; local node_modules (installed on Windows by npm ci for the unit
+# tests) must not be sent - they made the context upload fail and would overwrite the image's Linux modules.
+**/node_modules
+**/npm-debug.log
+**/*.log
+**/.env
+**/coverage
+**/__tests__
+**/logs
+**/tmp-uploads
+streamingService/videos
+streamingService/controllers/*.mp4

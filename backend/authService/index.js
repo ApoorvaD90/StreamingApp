@@ -25,6 +25,12 @@ app.use(cors({
 
 // Middleware
 app.use(express.json());
+
+// Prometheus metrics (Sprint 5): request count/latency for every route below, scraped at /metrics
+const { metricsMiddleware, metricsHandler } = require('./util/metrics');
+app.use(metricsMiddleware);
+app.get('/metrics', metricsHandler);
+
 app.use(cookieParser());
 
 // Database connection
@@ -35,6 +41,7 @@ const healthCheckRoute = require('./routes/healthCheck.route');
 const userRoute = require('./routes/user.route');
 
 app.use('/api/health', healthCheckRoute);
+app.use('/api/auth', userRoute); // ALB Ingress and nginx route /api/auth/* here
 app.use('/api', userRoute); // Changed from /apiv1 to /api
 
 // Error handling middleware

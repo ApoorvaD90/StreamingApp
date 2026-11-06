@@ -5,11 +5,14 @@ kind: Service
 metadata:
   name: {{ $svcName }}
   namespace: {{ $.Values.global.namespace }}
+  labels:
+    app: {{ $svcName }} # matched by the ServiceMonitor
 spec:
   selector:
     app: {{ $svcName }}
   ports:
-    - port: {{ $svc.service.port }}
+    - name: http # the ServiceMonitor scrapes this port by name
+      port: {{ $svc.service.port }}
       targetPort: {{ $svc.service.port }}
   type: ClusterIP
 ---

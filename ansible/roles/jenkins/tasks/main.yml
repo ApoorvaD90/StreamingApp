@@ -39,3 +39,8 @@
     name: jenkins
     enabled: true
     state: started
+
+- name: Hold the Jenkins package so apt upgrades never restart it mid-pipeline
+  dpkg_selections:
+    name: jenkins
+    selection: hold

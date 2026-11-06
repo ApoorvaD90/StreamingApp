@@ -1,5 +1,6 @@
 terraform {
-  required_version = ">= 1.6"
+  # Pinned: laptop and Jenkins must run the same version, or one cannot read the S3 state the other wrote
+  required_version = "= 1.15.7"
   required_providers {
     aws = {
       source  = "hashicorp/aws"

@@ -4,7 +4,7 @@ locals {
 resource "aws_ecr_repository" "services" {
   for_each             = toset(local.services)
   name                 = "streamingapp/${each.key}"
-  image_tag_mutability = "MUTABLE"
+  image_tag_mutability = "IMMUTABLE" # a tag (git SHA) always means the same build
   image_scanning_configuration { scan_on_push = true }
 }
 resource "aws_ecr_lifecycle_policy" "keep_last_10" {

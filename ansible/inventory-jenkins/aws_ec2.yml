@@ -1,0 +1,17 @@
+# Inventory used when Jenkins runs Ansible from inside the VPC.
+# Uses private IPs (SG allows SSH from the VPC CIDR) and no hard-coded key path:
+# the key comes from the Jenkins credential 'streamingapp-ssh-key' via --private-key.
+plugin: aws_ec2
+regions:
+  - us-east-1
+filters:
+  tag:Project: StreamingApp
+  instance-state-name: running
+keyed_groups:
+  - key: tags.Role
+    prefix: tag_Role
+hostnames:
+  - private-ip-address
+compose:
+  ansible_host: private_ip_address
+  ansible_user: "'ubuntu'"
